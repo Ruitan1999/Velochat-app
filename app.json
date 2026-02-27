@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "VeloChat",
+    "slug": "velochat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#3B82F6"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.yourname.velochat",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "VeloChat uses your location to show nearby rides.",
+        "NSCameraUsageDescription": "VeloChat uses your camera for profile photos."
+      },
+      "googleServicesFile": "./GoogleService-Info.plist"
+    },
+    "android": {
+      "softwareKeyboardLayoutMode": "adjustResize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3B82F6"
+      },
+      "package": "com.yourname.velochat",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#3B82F6",
+          "sounds": []
+        }
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-document-picker",
+      "expo-web-browser"
+    ],
+    "scheme": "velochat",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#3B82F6",
+      "androidMode": "default"
+    }
+  }
+}
