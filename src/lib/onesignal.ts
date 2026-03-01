@@ -1,11 +1,23 @@
 /**
  * OneSignal push notifications for ride chat messages.
  * Uses external user IDs (Supabase user IDs) so the backend can target users.
+ * No-ops in Expo Go (native module not available); use a dev build for real push.
  */
 
 import Constants from 'expo-constants'
-import { OneSignal, type NotificationClickEvent } from 'react-native-onesignal'
 import { router } from 'expo-router'
+import type { NotificationClickEvent } from 'react-native-onesignal'
+
+// Only load native module when not in Expo Go (avoids "native module doesn't exist" crash)
+const isExpoGo = Constants.appOwnership === 'expo'
+let OneSignal: typeof import('react-native-onesignal').OneSignal | null = null
+if (!isExpoGo) {
+  try {
+    OneSignal = require('react-native-onesignal').OneSignal
+  } catch {
+    // native module not available (e.g. web, or dev build without OneSignal)
+  }
+}
 
 const ONESIGNAL_APP_ID =
   Constants.expoConfig?.extra?.onesignalAppId ?? 'YOUR_ONESIGNAL_APP_ID'
@@ -13,7 +25,7 @@ const ONESIGNAL_APP_ID =
 let initialized = false
 
 export function initOneSignal() {
-  if (initialized || !ONESIGNAL_APP_ID || ONESIGNAL_APP_ID === 'YOUR_ONESIGNAL_APP_ID') {
+  if (!OneSignal || initialized || !ONESIGNAL_APP_ID || ONESIGNAL_APP_ID === 'YOUR_ONESIGNAL_APP_ID') {
     return
   }
   OneSignal.initialize(ONESIGNAL_APP_ID)
@@ -21,19 +33,20 @@ export function initOneSignal() {
 }
 
 export function setOneSignalUserId(userId: string) {
-  if (!initialized) return
+  if (!OneSignal || !initialized) return
   OneSignal.login(userId)
 }
 
 export function clearOneSignalUserId() {
-  if (!initialized) return
+  if (!OneSignal || !initialized) return
   OneSignal.logout()
 }
 
-export function setupOneSignalNotificationClick() {
+export function setupOneSignalNotificationClick(): (() => void) | undefined {
+  if (!OneSignal) return undefined
+
   const navigateFromNotification = (data: Record<string, string> | undefined) => {
     if (!data?.roomId && !data?.rideId) return
-    // Delay ensures the navigation stack is mounted (background or killed start)
     setTimeout(() => {
       if (data.roomId) router.push(`/chat/${data.roomId}` as any)
       else if (data.rideId) router.push(`/ride/${data.rideId}` as any)
@@ -45,10 +58,8 @@ export function setupOneSignalNotificationClick() {
     navigateFromNotification(data)
   }
 
-  // Register listener immediately (no initialized guard) so it catches taps
-  // even when the app is opened from killed state before login completes.
   OneSignal.Notifications.addEventListener('click', handler)
   return () => {
-    OneSignal.Notifications.removeEventListener('click', handler)
+    OneSignal!.Notifications.removeEventListener('click', handler)
   }
 }
