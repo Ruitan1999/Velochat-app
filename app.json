@@ -16,7 +16,8 @@
       "bundleIdentifier": "com.yourname.velochat",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "VeloChat uses your location to show nearby rides.",
-        "NSCameraUsageDescription": "VeloChat uses your camera for profile photos."
+        "NSCameraUsageDescription": "VeloChat uses your camera for profile photos.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "googleServicesFile": "./GoogleService-Info.plist"
     },
@@ -24,7 +25,7 @@
       "softwareKeyboardLayoutMode": "adjustResize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#3B82F6"
+        "backgroundColor": "#0f172a"
       },
       "package": "com.yourname.velochat",
       "googleServicesFile": "./google-services.json",
@@ -46,7 +47,13 @@
       "expo-font",
       "expo-secure-store",
       "expo-document-picker",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "development"
+        }
+      ]
     ],
     "scheme": "velochat",
     "experiments": {
@@ -56,6 +63,16 @@
       "icon": "./assets/notification-icon.png",
       "color": "#3B82F6",
       "androidMode": "default"
+    },
+    "updates": {
+      "enabled": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "315c31b3-57bd-4a52-a9f9-9b151a05f06a"
+      },
+      "onesignalAppId": "da56aaa9-83c2-4ac3-8219-00a97740f710"
     }
   }
 }

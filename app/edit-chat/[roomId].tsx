@@ -10,34 +10,85 @@ import { supabase, ChatRoom } from '../../src/lib/supabase'
 import { Button } from '../../src/components/ui'
 import { colors, spacing, fontSize, fontWeight, radius } from '../../src/lib/theme'
 import { ChevronLeft } from 'lucide-react-native'
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'
 
 export default function EditChatScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>()
+  const { roomId: roomIdParam } = useLocalSearchParams<{ roomId: string | string[] }>()
+  const roomId = typeof roomIdParam === 'string' ? roomIdParam : roomIdParam?.[0]
   const { user } = useAuth()
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [date, setDate] = useState('')
+  const [time, setTime] = useState('')
+  const [location, setLocation] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showTimePicker, setShowTimePicker] = useState(false)
+
+  const formatDate = (d: Date) =>
+    d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+
+  const formatTime = (d: Date) => {
+    const hh = d.getHours().toString().padStart(2, '0')
+    const mm = d.getMinutes().toString().padStart(2, '0')
+    return `${hh}:${mm}`
+  }
 
   useEffect(() => {
-    if (!roomId) return
-    supabase
-      .from('chat_rooms')
-      .select('*')
-      .eq('id', roomId)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          setRoom(data)
-          setTitle(data.title ?? '')
-          setDescription(data.description ?? '')
-        }
+    if (!roomId) {
+      setLoading(false)
+      return
+    }
+    let isMounted = true
+
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('id', roomId)
+        .single()
+
+      if (!isMounted) return
+      if (error) {
+        Alert.alert('Error', error.message ?? 'Failed to load chat room')
         setLoading(false)
-      })
+        return
+      }
+
+      setRoom(data)
+
+      // Default to chat room title
+      let initialTitle = data?.title ?? ''
+
+      // For ride chats, prefer the current ride title so everything stays in sync
+      if (data?.ride_id) {
+        const { data: ride } = await supabase
+          .from('rides')
+          .select('title, date, time, location')
+          .eq('id', data.ride_id)
+          .single()
+        if (!isMounted) return
+        if (ride) {
+          if (ride.title) {
+            initialTitle = ride.title
+          }
+          setDate(ride.date ?? '')
+          setTime(ride.time ?? '')
+          setLocation(ride.location ?? '')
+        }
+      }
+
+      setTitle(initialTitle)
+      setLoading(false)
+    }
+
+    load()
+    return () => { isMounted = false }
   }, [roomId])
 
   const handleSave = async () => {
+    if (!roomId) return
     if (!title.trim()) {
       Alert.alert('Error', 'Title is required')
       return
@@ -46,7 +97,7 @@ export default function EditChatScreen() {
 
     const { error } = await supabase
       .from('chat_rooms')
-      .update({ title: title.trim(), description: description.trim() || null })
+      .update({ title: title.trim() })
       .eq('id', roomId)
 
     setSaving(false)
@@ -59,7 +110,12 @@ export default function EditChatScreen() {
     if (room?.ride_id) {
       await supabase
         .from('rides')
-        .update({ title: title.trim() })
+        .update({
+          title: title.trim(),
+          date: date.trim() || null,
+          time: time.trim() || null,
+          location: location.trim() || null,
+        })
         .eq('id', room.ride_id)
     }
 
@@ -105,18 +161,70 @@ export default function EditChatScreen() {
             placeholder="Chat room title"
             placeholderTextColor={colors.slate400}
           />
+          {isRide && (
+            <>
+              <Text style={styles.label}>Date</Text>
+              <TouchableOpacity
+                style={styles.input}
+                activeOpacity={0.8}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={date ? styles.inputText : styles.inputPlaceholder}>
+                  {date || 'Select date'}
+                </Text>
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_event: DateTimePickerEvent, selectedDate?: Date) => {
+                    if (Platform.OS === 'android') {
+                      setShowDatePicker(false)
+                    }
+                    if (selectedDate) {
+                      setDate(formatDate(selectedDate))
+                    }
+                  }}
+                />
+              )}
 
-          <Text style={styles.label}>Description (optional)</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="What's this chat about?"
-            placeholderTextColor={colors.slate400}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
+              <Text style={styles.label}>Start Time</Text>
+              <TouchableOpacity
+                style={styles.input}
+                activeOpacity={0.8}
+                onPress={() => setShowTimePicker(true)}
+              >
+                <Text style={time ? styles.inputText : styles.inputPlaceholder}>
+                  {time || 'Select time'}
+                </Text>
+              </TouchableOpacity>
+              {showTimePicker && (
+                <DateTimePicker
+                  value={new Date()}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_event: DateTimePickerEvent, selectedDate?: Date) => {
+                    if (Platform.OS === 'android') {
+                      setShowTimePicker(false)
+                    }
+                    if (selectedDate) {
+                      setTime(formatTime(selectedDate))
+                    }
+                  }}
+                />
+              )}
+
+              <Text style={styles.label}>Location</Text>
+              <TextInput
+                style={styles.input}
+                value={location}
+                onChangeText={setLocation}
+                placeholder="e.g. Eastside Loop"
+                placeholderTextColor={colors.slate400}
+              />
+            </>
+          )}
         </ScrollView>
 
         <View style={styles.footer}>
@@ -149,8 +257,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: 13,
     fontSize: fontSize.base, color: colors.slate800,
   },
-  textArea: {
-    minHeight: 100, paddingTop: 13,
+  inputText: {
+    fontSize: fontSize.base,
+    color: colors.slate800,
+  },
+  inputPlaceholder: {
+    fontSize: fontSize.base,
+    color: colors.slate400,
   },
   footer: {
     padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.slate200,

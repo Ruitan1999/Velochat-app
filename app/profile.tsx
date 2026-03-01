@@ -1,26 +1,26 @@
 import React, { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, Switch, KeyboardAvoidingView, Platform,
-  Image, ActivityIndicator,
+  StyleSheet, Alert, Switch, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native'
-import * as ImagePicker from 'expo-image-picker'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
+import * as ImagePicker from 'expo-image-picker'
+const { decode } = require('base64-arraybuffer')
+import * as FileSystem from 'expo-file-system/legacy'
 import { useAuth } from '../src/lib/AuthContext'
 import { supabase } from '../src/lib/supabase'
 import { Avatar, Button } from '../src/components/ui'
 import { colors, spacing, fontSize, fontWeight, radius } from '../src/lib/theme'
 import {
-  ChevronLeft, Camera, User, Mail, Lock, Bell,
-  BellOff, MessageCircle, Bike, Users, LogOut, ChevronRight,
+  ChevronLeft, User, Mail, Shield,
+  LogOut, ChevronRight, Camera,
 } from 'lucide-react-native'
 
 export default function ProfileScreen() {
   const { user, profile, updateProfile, signOut } = useAuth()
 
   const [name, setName] = useState(profile?.name ?? '')
-  const [handle, setHandle] = useState(profile?.handle ?? '')
   const [bio, setBio] = useState(profile?.bio ?? '')
   const [saving, setSaving] = useState(false)
 
@@ -28,60 +28,42 @@ export default function ProfileScreen() {
   const [newEmail, setNewEmail] = useState('')
   const [emailLoading, setEmailLoading] = useState(false)
 
-  const [showPasswordChange, setShowPasswordChange] = useState(false)
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [passwordLoading, setPasswordLoading] = useState(false)
-
-  const [notifRides, setNotifRides] = useState(true)
-  const [notifMessages, setNotifMessages] = useState(true)
-  const [notifFriends, setNotifFriends] = useState(true)
-
   const [avatarUploading, setAvatarUploading] = useState(false)
 
+  const [accountVisibility, setAccountVisibility] = useState<'public' | 'private'>(
+    (profile as any)?.visibility ?? 'public'
+  )
+
   const handlePickAvatar = async () => {
-    if (!user) return
-
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow access to your photos to update your profile image.')
-      return
-    }
-
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.9,
+      quality: 0.7,
     })
+    if (result.canceled || !result.assets?.[0]?.uri) return
 
-    if (result.canceled || !result.assets?.length) return
-
+    setAvatarUploading(true)
     try {
-      setAvatarUploading(true)
-      const asset = result.assets[0]
-      const fileExt = asset.uri.split('.').pop() || 'jpg'
-      const filePath = `${user.id}/${Date.now()}.${fileExt}`
+      const uri = result.assets[0].uri
+      const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const filePath = `${user!.id}/avatar.${ext}`
 
-      const response = await fetch(asset.uri)
-      const blob = await response.blob()
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' })
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, blob, { upsert: true })
+        .upload(filePath, decode(base64), {
+          contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+          upsert: true,
+        })
+      if (uploadError) throw uploadError
 
-      if (uploadError) {
-        Alert.alert('Upload failed', uploadError.message)
-        setAvatarUploading(false)
-        return
-      }
-
-      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath)
-      const publicUrl = data.publicUrl
-
-      await updateProfile({ avatar_url: publicUrl })
+      const { data: publicUrl } = supabase.storage.from('avatars').getPublicUrl(filePath)
+      const avatarUrl = `${publicUrl.publicUrl}?t=${Date.now()}`
+      await updateProfile({ avatar_url: avatarUrl })
     } catch (err: any) {
-      Alert.alert('Upload failed', err?.message ?? 'Something went wrong while uploading your image.')
+      Alert.alert('Upload failed', err?.message ?? 'Could not upload avatar')
     } finally {
       setAvatarUploading(false)
     }
@@ -93,50 +75,38 @@ export default function ProfileScreen() {
       return
     }
     setSaving(true)
-    const initials = name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-    await updateProfile({
-      name: name.trim(),
-      handle: handle.trim(),
-      bio: bio.trim() || undefined,
-      avatar_initials: initials,
-    })
-    setSaving(false)
-    Alert.alert('Saved', 'Profile updated')
+    try {
+      const initials = name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+      await updateProfile({
+        name: name.trim(),
+        bio: bio.trim() || undefined,
+        avatar_initials: initials,
+        visibility: accountVisibility,
+      })
+      Alert.alert('Saved', 'Profile updated')
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to save profile')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleChangeEmail = async () => {
     if (!newEmail.trim()) return
     setEmailLoading(true)
-    const { error } = await supabase.auth.updateUser({ email: newEmail.trim() })
-    setEmailLoading(false)
-    if (error) {
-      Alert.alert('Error', error.message)
-    } else {
-      Alert.alert('Check your email', 'A confirmation link has been sent to your new email address.')
-      setShowEmailChange(false)
-      setNewEmail('')
-    }
-  }
-
-  const handleChangePassword = async () => {
-    if (newPassword.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters')
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match')
-      return
-    }
-    setPasswordLoading(true)
-    const { error } = await supabase.auth.updateUser({ password: newPassword })
-    setPasswordLoading(false)
-    if (error) {
-      Alert.alert('Error', error.message)
-    } else {
-      Alert.alert('Done', 'Password updated successfully')
-      setShowPasswordChange(false)
-      setNewPassword('')
-      setConfirmPassword('')
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() })
+      if (error) {
+        Alert.alert('Error', error.message)
+      } else {
+        Alert.alert('Check your email', 'A confirmation link has been sent to your new email address.')
+        setShowEmailChange(false)
+        setNewEmail('')
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to update email')
+    } finally {
+      setEmailLoading(false)
     }
   }
 
@@ -151,6 +121,22 @@ export default function ProfileScreen() {
         },
       },
     ])
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <ChevronLeft size={28} color={colors.slate400} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Profile</Text>
+        </View>
+        <View style={styles.spinnerWrap}>
+          <ActivityIndicator size="large" color={colors.blue500} />
+        </View>
+      </SafeAreaView>
+    )
   }
 
   return (
@@ -174,25 +160,22 @@ export default function ProfileScreen() {
         >
           {/* Avatar */}
           <View style={styles.avatarSection}>
-            <View style={styles.avatarWrap}>
-              {profile?.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
-              ) : (
-                <Avatar initials={profile?.avatar_initials ?? '?'} color={profile?.avatar_color} size="xl" />
-              )}
-              <TouchableOpacity
-                style={styles.cameraBtn}
-                activeOpacity={0.8}
-                onPress={handlePickAvatar}
-                disabled={avatarUploading}
-              >
-                {avatarUploading
-                  ? <ActivityIndicator size="small" color={colors.white} />
-                  : <Camera size={16} color={colors.white} />}
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.avatarWrap} onPress={handlePickAvatar} activeOpacity={0.8}>
+              <Avatar
+                initials={profile?.avatar_initials ?? '?'}
+                color={profile?.avatar_color}
+                size="xl"
+                uri={profile?.avatar_url}
+              />
+              <View style={styles.avatarCameraBadge}>
+                {avatarUploading ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Camera size={14} color={colors.white} />
+                )}
+              </View>
+            </TouchableOpacity>
             <Text style={styles.avatarName}>{profile?.name}</Text>
-            <Text style={styles.avatarHandle}>{profile?.handle}</Text>
           </View>
 
           {/* Profile Info */}
@@ -208,19 +191,6 @@ export default function ProfileScreen() {
               onChangeText={setName}
               placeholder="Your name"
               placeholderTextColor={colors.slate400}
-            />
-
-            <View style={[styles.fieldRow, { marginTop: 16 }]}>
-              <Text style={[styles.fieldLabel, { marginLeft: 0 }]}>@</Text>
-              <Text style={styles.fieldLabel}>Handle</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              value={handle}
-              onChangeText={setHandle}
-              placeholder="@yourhandle"
-              placeholderTextColor={colors.slate400}
-              autoCapitalize="none"
             />
 
             <View style={[styles.fieldRow, { marginTop: 16 }]}>
@@ -246,6 +216,34 @@ export default function ProfileScreen() {
           {/* Account */}
           <Text style={styles.sectionTitle}>Account</Text>
           <View style={styles.card}>
+            {/* Privacy */}
+            <View style={styles.switchRow}>
+              <View style={styles.menuItemLeft}>
+                <Shield size={16} color={colors.slate400} />
+                <View>
+                  <Text style={styles.menuItemLabel}>Private account</Text>
+                 
+                </View>
+              </View>
+              <Switch
+                value={accountVisibility === 'private'}
+                onValueChange={async val => {
+                  const next = val ? 'private' : 'public'
+                  setAccountVisibility(next)
+                  // persist immediately so toggle actually saves
+                  try {
+                    await updateProfile({ visibility: next as any })
+                  } catch {
+                    // ignore – AuthContext already surfaces most errors; UI stays in last state
+                  }
+                }}
+                trackColor={{ false: colors.slate200, true: colors.blue200 }}
+                thumbColor={accountVisibility === 'private' ? colors.blue500 : colors.slate400}
+              />
+            </View>
+
+            <View style={styles.divider} />
+
             {/* Email */}
             <TouchableOpacity
               style={styles.menuItem}
@@ -277,97 +275,19 @@ export default function ProfileScreen() {
                 </Button>
               </View>
             )}
-
-            <View style={styles.divider} />
-
-            {/* Password */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => setShowPasswordChange(!showPasswordChange)}
-            >
-              <View style={styles.menuItemLeft}>
-                <Lock size={16} color={colors.slate400} />
-                <Text style={styles.menuItemLabel}>Password</Text>
-              </View>
-              <ChevronRight size={16} color={colors.slate300} />
-            </TouchableOpacity>
-
-            {showPasswordChange && (
-              <View style={styles.expandedSection}>
-                <TextInput
-                  style={styles.input}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholder="New password"
-                  placeholderTextColor={colors.slate400}
-                  secureTextEntry
-                />
-                <TextInput
-                  style={[styles.input, { marginTop: 8 }]}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="Confirm password"
-                  placeholderTextColor={colors.slate400}
-                  secureTextEntry
-                />
-                <Button onPress={handleChangePassword} loading={passwordLoading} style={{ marginTop: 8 }}>
-                  Update Password
-                </Button>
-              </View>
-            )}
           </View>
 
-          {/* Notifications */}
-          <Text style={styles.sectionTitle}>Notifications</Text>
-          <View style={styles.card}>
-            <View style={styles.switchRow}>
-              <View style={styles.menuItemLeft}>
-                <Bike size={16} color={colors.blue500} />
-                <Text style={styles.menuItemLabel}>Ride invites</Text>
-              </View>
-              <Switch
-                value={notifRides}
-                onValueChange={setNotifRides}
-                trackColor={{ false: colors.slate200, true: colors.blue200 }}
-                thumbColor={notifRides ? colors.blue500 : colors.slate400}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.switchRow}>
-              <View style={styles.menuItemLeft}>
-                <MessageCircle size={16} color={colors.cyan500} />
-                <Text style={styles.menuItemLabel}>Chat messages</Text>
-              </View>
-              <Switch
-                value={notifMessages}
-                onValueChange={setNotifMessages}
-                trackColor={{ false: colors.slate200, true: colors.blue200 }}
-                thumbColor={notifMessages ? colors.blue500 : colors.slate400}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.switchRow}>
-              <View style={styles.menuItemLeft}>
-                <Users size={16} color={colors.violet500} />
-                <Text style={styles.menuItemLabel}>Friend requests</Text>
-              </View>
-              <Switch
-                value={notifFriends}
-                onValueChange={setNotifFriends}
-                trackColor={{ false: colors.slate200, true: colors.blue200 }}
-                thumbColor={notifFriends ? colors.blue500 : colors.slate400}
-              />
-            </View>
-          </View>
-
-          {/* Sign Out */}
+          {/* Danger zone */}
           <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
             <LogOut size={16} color={colors.red600} />
             <Text style={styles.signOutText}>Sign Out</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => router.push('/delete-account')}
+          >
+            <Text style={styles.deleteText}>Delete Account</Text>
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />
@@ -379,6 +299,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.slate50 },
+  spinnerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: spacing.lg, paddingVertical: 12,
@@ -391,16 +312,14 @@ const styles = StyleSheet.create({
 
   avatarSection: { alignItems: 'center', paddingVertical: 20 },
   avatarWrap: { position: 'relative' },
-  avatarImage: { width: 80, height: 80, borderRadius: 40 },
-  cameraBtn: {
+  avatarCameraBadge: {
     position: 'absolute', bottom: 0, right: -4,
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: colors.blue500, alignItems: 'center', justifyContent: 'center',
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: colors.blue500,
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: colors.white,
   },
   avatarName: { fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.slate900, marginTop: 12 },
-  avatarHandle: { fontSize: fontSize.sm, color: colors.slate400, marginTop: 2 },
-
   sectionTitle: {
     fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: colors.slate500,
     textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 4,
@@ -444,4 +363,14 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.red200,
   },
   signOutText: { fontSize: fontSize.base, fontWeight: fontWeight.bold, color: colors.red600 },
+  deleteBtn: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  deleteText: {
+    fontSize: fontSize.sm,
+    color: colors.slate400,
+    textDecorationLine: 'underline',
+  },
 })

@@ -11,17 +11,19 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter'
-import { router, useSegments } from 'expo-router'
+import { router, useSegments, useRootNavigationState } from 'expo-router'
 import { AuthProvider, useAuth } from '../src/lib/AuthContext'
+import { initOneSignal, setupOneSignalNotificationClick } from '../src/lib/onesignal'
 import { setupNotificationListeners } from '../src/lib/notifications'
 import { colors } from '../src/lib/theme'
 
 function AuthGate() {
   const { session, loading } = useAuth()
   const segments = useSegments()
+  const navState = useRootNavigationState()
 
   useEffect(() => {
-    if (loading) return
+    if (loading || !navState?.key) return
 
     const inAuthGroup = segments[0] === '(auth)'
     if (!session && !inAuthGroup) {
@@ -29,22 +31,47 @@ function AuthGate() {
     } else if (session && inAuthGroup) {
       router.replace('/(tabs)/chats')
     }
-  }, [session, loading, segments])
+  }, [session, loading, segments, navState?.key])
 
-  // Set up notification deep-link handling
+  // Notification click → deep link to chat (OneSignal + Expo push)
   useEffect(() => {
-    const cleanup = setupNotificationListeners(
-      (_notification) => {
-        // Foreground notification received — could show a banner
-      },
-      (response) => {
-        // User tapped a notification
-        const data = response.notification.request.content.data as Record<string, string>
-        if (data?.roomId) router.push(`/chat/${data.roomId}`)
-        else if (data?.rideId) router.push(`/ride/${data.rideId}`)
+    // Init early so the click listener can catch killed-state taps
+    initOneSignal()
+    const unsubOneSignal = setupOneSignalNotificationClick()
+
+    const unsubExpo = setupNotificationListeners(
+      () => {},
+      (response: any) => {
+        const data = response?.notification?.request?.content?.data ?? {}
+        const roomId = data?.roomId ?? data?.room_id
+        if (roomId) {
+          setTimeout(() => {
+            router.push(`/chat/${roomId}` as any)
+          }, 100)
+        }
       }
     )
-    return cleanup
+
+    // App opened from killed state by tapping notification (Expo)
+    const checkLastResponse = async () => {
+      try {
+        const { getLastNotificationResponseAsync } = await import('expo-notifications')
+        const last = await getLastNotificationResponseAsync()
+        const data = last?.notification?.request?.content?.data ?? {}
+        const roomId = data?.roomId ?? data?.room_id
+        if (roomId) {
+          setTimeout(() => router.push(`/chat/${roomId}` as any), 300)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    checkLastResponse()
+
+    return () => {
+      unsubOneSignal?.()
+      unsubExpo?.()
+    }
   }, [])
 
   if (loading) {
@@ -105,6 +132,10 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="profile"
+              options={{ presentation: 'card', animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="delete-account"
               options={{ presentation: 'card', animation: 'slide_from_right' }}
             />
           </Stack>

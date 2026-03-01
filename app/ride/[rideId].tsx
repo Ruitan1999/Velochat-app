@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useLocalSearchParams, router } from 'expo-router'
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
 import { useAuth } from '../../src/lib/AuthContext'
 import { supabase, Ride } from '../../src/lib/supabase'
 import { Avatar, AvatarStack, CountdownBadge, Card } from '../../src/components/ui'
@@ -14,29 +14,40 @@ import { fmtTime } from '../../src/lib/utils'
 import { ChevronLeft, MoreVertical, Pencil, Trash2, Calendar, Clock, Zap, MapPin, Map, Check, X, MessageCircle, ChevronRight } from 'lucide-react-native'
 
 export default function RideScreen() {
-  const { rideId } = useLocalSearchParams<{ rideId: string }>()
+  const { rideId: rideIdParam } = useLocalSearchParams<{ rideId: string | string[] }>()
+  const rideId = typeof rideIdParam === 'string' ? rideIdParam : rideIdParam?.[0]
   const { user } = useAuth()
   const [ride, setRide] = useState<Ride | null>(null)
+  const [headerRefreshing, setHeaderRefreshing] = useState(false)
   const [myRsvp, setMyRsvp] = useState<'in' | 'out' | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const fetchRide = async () => {
+    if (!rideId) return
     const { data } = await supabase
       .from('rides')
       .select(`
         *,
-        organizer:profiles!organizer_id(*),
-        rsvps:ride_rsvps(*, profile:profiles(id,name,avatar_initials,avatar_color)),
+        organizer:profiles!organizer_id(id,name,avatar_initials,avatar_color,avatar_url),
+        rsvps:ride_rsvps(*, profile:profiles!user_id(id,name,avatar_initials,avatar_color,avatar_url)),
         chat_room:chat_rooms(*)
       `)
       .eq('id', rideId)
       .single()
     setRide(data)
+    setHeaderRefreshing(false)
     const myR = data?.rsvps?.find((r: { user_id: string }) => r.user_id === user?.id)
     setMyRsvp(myR?.status ?? null)
   }
 
   useEffect(() => { fetchRide() }, [rideId])
+
+  useFocusEffect(
+    useCallback(() => {
+      setHeaderRefreshing(true)
+      fetchRide()
+    }, [rideId]),
+  )
 
   const handleRsvp = async (status: 'in' | 'out') => {
     if (!user) return
@@ -67,7 +78,7 @@ export default function RideScreen() {
     ])
   }
 
-  if (!ride) return null
+  if (!rideId || !ride) return null
 
   const isOwner = ride.organizer_id === user?.id
   const inRiders = ride.rsvps?.filter(r => r.status === 'in') ?? []
@@ -80,7 +91,7 @@ export default function RideScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ChevronLeft size={28} color={colors.slate400} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{ride.title}</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>{headerRefreshing ? '...' : (ride?.title ?? '...')}</Text>
         {isOwner && (
           <View style={styles.menuWrap}>
             <TouchableOpacity onPress={() => setMenuOpen(o => !o)} style={styles.menuBtn}>
@@ -140,8 +151,13 @@ export default function RideScreen() {
 
           {ride.organizer && (
             <View style={styles.organizer}>
-              <Avatar initials={ride.organizer.avatar_initials} color={ride.organizer.avatar_color} size="sm" />
-              <Text style={styles.organizerLabel}>Organised by <Text style={{ fontWeight: fontWeight.semibold }}>{ride.organizer.name}</Text></Text>
+              <Avatar
+                initials={ride.organizer.avatar_initials}
+                color={ride.organizer.avatar_color}
+                uri={ride.organizer.avatar_url}
+                size="sm"
+              />
+              <Text style={styles.organizerLabel}>Organised by <Text style={{ fontWeight: fontWeight.semibold }}>{ride.organizer_id === user?.id ? 'You' : ride.organizer?.name}</Text></Text>
             </View>
           )}
         </Card>
@@ -178,8 +194,13 @@ export default function RideScreen() {
             <Text style={styles.ridersLabel}>Riding ({inRiders.length})</Text>
             {inRiders.map(r => (
               <View key={r.user_id} style={styles.riderRow}>
-                <Avatar initials={r.profile?.avatar_initials ?? '?'} color={r.profile?.avatar_color} size="sm" />
-                <Text style={styles.riderName}>{r.profile?.name}</Text>
+                <Avatar
+                  initials={r.profile?.avatar_initials ?? '?'}
+                  color={r.profile?.avatar_color}
+                  uri={r.profile?.avatar_url}
+                  size="sm"
+                />
+                <Text style={styles.riderName}>{r.user_id === user?.id ? 'You' : r.profile?.name}</Text>
               </View>
             ))}
           </Card>

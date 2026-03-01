@@ -1,19 +1,25 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, Alert,
-  Keyboard, Pressable, Modal, Animated, LayoutAnimation,
+  Keyboard, Pressable, Modal, Animated, ActivityIndicator, Image,
+  Dimensions,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { useLocalSearchParams, router } from 'expo-router'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
 import { useAuth } from '../../src/lib/AuthContext'
 import { useMessages } from '../../src/hooks/useData'
 import { supabase, ChatRoom, Message } from '../../src/lib/supabase'
+
+type ChatRoomWithClub = ChatRoom & {
+  club?: { id: string; name: string; avatar_url?: string | null; avatar_initials?: string; color?: string } | null
+}
 import { Avatar } from '../../src/components/ui'
 import { RouteMap } from '../../src/components/RouteMap'
 import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
 import { fmtMessageTime } from '../../src/lib/utils'
-import { ChevronLeft, MoreVertical, Pencil, Trash2, MessageCircle, Send, Timer } from 'lucide-react-native'
+import { ChevronLeft, MoreVertical, Pencil, Trash2, MessageCircle, Send, Paperclip, X } from 'lucide-react-native'
+import * as ImagePicker from 'expo-image-picker'
 
 const QUICK_REPLIES_RIDE = [
   { label: '✅ I\'m In!', text: 'I\'m in!' },
@@ -31,75 +37,109 @@ const QUICK_REPLIES_GENERAL = [
 ]
 
 export default function ChatScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>()
+  const { roomId: roomIdParam } = useLocalSearchParams<{ roomId: string | string[] }>()
+  const roomId = typeof roomIdParam === 'string' ? roomIdParam : roomIdParam?.[0]
   const { user, profile } = useAuth()
-  const { messages, loading, sendMessage } = useMessages(roomId)
-  const [room, setRoom] = useState<ChatRoom | null>(null)
+  const { messages, loading, sendMessage, sendImage } = useMessages(roomId ?? '')
+  const [room, setRoom] = useState<ChatRoomWithClub | null>(null)
+  const [headerTitle, setHeaderTitle] = useState('...')
   const [input, setInput] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [rideRoute, setRideRoute] = useState<{ polyline: string; distanceKm?: number; elevationGainM?: number; name?: string } | null>(null)
-  const listRef = useRef<FlatList>(null)
-  const inputRef = useRef<TextInput>(null)
+  const listRef = useRef<FlatList | null>(null)
+  const inputRef = useRef<TextInput | null>(null)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
-  const [isAtBottom, setIsAtBottom] = useState(true)
-  const [listHeight, setListHeight] = useState(0)
-  const [contentHeight, setContentHeight] = useState(0)
+  const [fullScreenImageUri, setFullScreenImageUri] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const hasInitialScrolledRef = useRef(false)
+  const isNearBottomRef = useRef(true)
+  const lastMarkAsReadRef = useRef(0)
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window')
+  const insets = useSafeAreaInsets()
 
   useEffect(() => {
-    const animateTransition = () => {
-      LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'))
-    }
-
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => { animateTransition(); setKeyboardOpen(true) }
+      () => setKeyboardOpen(true),
     )
     const hideSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        animateTransition()
-        setKeyboardOpen(false)
-        setInput('') // reset input to initial state when keyboard closes
-      }
+      () => setKeyboardOpen(false),
     )
-    return () => { showSub.remove(); hideSub.remove() }
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
   }, [])
 
-  // Load room details + mark as read
+  // Reset initial-scroll flag when entering a different room so we scroll to bottom on enter
   useEffect(() => {
+    hasInitialScrolledRef.current = false
+  }, [roomId])
+
+  const loadRoom = useCallback(async () => {
     if (!roomId || !user) return
-    supabase
+
+    // RPC upserts participant and sets last_read_at = now(), is_active = true (not blocked by RLS)
+    await supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: true })
+
+    if (!room) setHeaderTitle('...')
+
+    const { data, error } = await supabase
       .from('chat_rooms')
-      .select('*, participants:chat_participants(user_id, profile:profiles(id,name,avatar_initials,avatar_color))')
+      .select('*, participants:chat_participants(user_id, profile:profiles(id,name,avatar_initials,avatar_color,avatar_url)), club:clubs(id, name, avatar_url, avatar_initials, color)')
       .eq('id', roomId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) console.error('Failed to load room:', error.message)
-        setRoom(data)
-        // Mark messages as read for current user
-        supabase.from('chat_participants').update({ last_read_at: new Date().toISOString() }).eq('room_id', roomId).eq('user_id', user.id).then(() => {})
-        // If this is a ride chat, fetch the ride's route
-        if (data?.ride_id) {
-          supabase
-            .from('rides')
-            .select('route_polyline, route_distance_km, route_elevation_m, route_name')
-            .eq('id', data.ride_id)
-            .single()
-            .then(({ data: ride }) => {
-              if (ride?.route_polyline) {
-                setRideRoute({
-                  polyline: ride.route_polyline,
-                  distanceKm: ride.route_distance_km,
-                  elevationGainM: ride.route_elevation_m,
-                  name: ride.route_name,
-                })
-              }
-            })
-        }
-      })
+      .maybeSingle()
+
+    if (error) {
+      console.error('Failed to load room:', error.message)
+      return
+    }
+    if (!data) {
+      return
+    }
+
+    setRoom(data)
+    if (data?.title) setHeaderTitle(data.title)
+
+    // For ride chats, pull route + keep title in sync with ride title
+    if (data?.ride_id) {
+      const { data: ride } = await supabase
+        .from('rides')
+        .select('route_polyline, route_distance_km, route_elevation_m, route_name, title')
+        .eq('id', data.ride_id)
+        .single()
+
+      if (ride?.route_polyline) {
+        setRideRoute({
+          polyline: ride.route_polyline,
+          distanceKm: ride.route_distance_km,
+          elevationGainM: ride.route_elevation_m,
+          name: ride.route_name,
+        })
+      }
+      if (ride?.title) {
+        setHeaderTitle(ride.title)
+      }
+    }
   }, [roomId, user])
 
-  // Auto-scroll is handled via onContentSizeChange + scroll position tracking
+  const markAsRead = useCallback(async () => {
+    if (!roomId) return
+    await supabase.rpc('set_chat_participant_last_read', { p_room_id: roomId })
+  }, [roomId])
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRoom()
+      return () => {
+        // Mark the user as no longer viewing so they receive push notifications again
+        if (roomId && user) {
+          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => {})
+        }
+      }
+    }, [loadRoom, roomId, user]),
+  )
 
   const isOwner = room?.created_by === user?.id
   const isRide = room?.type === 'ride'
@@ -110,50 +150,56 @@ export default function ChatScreen() {
     const text = input.trim()
     setInput('')
     await sendMessage(text)
-    // Always snap to bottom when you send a message yourself
-    setTimeout(() => scrollToBottom(), 0)
-    Keyboard.dismiss()
-    inputRef.current?.blur()
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
   }
 
   const handleQuickReply = async (text: string) => {
     if (!text.trim()) return
-    await sendMessage(text.trim())
-    Keyboard.dismiss()
+    const trimmed = text.trim()
+    await sendMessage(trimmed)
+    // When user taps "I'm In!", "Let's ride!", or "I'm Out" in a ride chat, update ride_rsvps so it reflects on the ride card
+    if (isRide && room?.ride_id && user?.id) {
+      if (trimmed === "I'm in!" || trimmed === "Let's ride! 🔥") {
+        await supabase.from('ride_rsvps').upsert(
+          { ride_id: room.ride_id, user_id: user.id, status: 'in' },
+          { onConflict: 'ride_id,user_id' }
+        )
+      } else if (trimmed === "I'm out, can't make it.") {
+        await supabase.from('ride_rsvps').upsert(
+          { ride_id: room.ride_id, user_id: user.id, status: 'out' },
+          { onConflict: 'ride_id,user_id' }
+        )
+      }
+    }
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
     inputRef.current?.blur()
   }
 
-  const handleContentSizeChange = (_w: number, h: number) => {
-    setContentHeight(h)
-    if (messages.length === 0 || !isAtBottom) return
-    if (!listRef.current) return
-    if (listHeight === 0) {
-      listRef.current.scrollToEnd({ animated: false })
-      return
-    }
-    const offset = Math.max(0, h - listHeight)
-    listRef.current.scrollToOffset({ offset, animated: false })
-  }
-
-  const handleScroll = (event: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
-    const paddingToBottom = 24
-    const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - paddingToBottom
-    if (atBottom !== isAtBottom) {
-      setIsAtBottom(atBottom)
+  const handlePickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+      allowsMultipleSelection: false,
+    })
+    if (result.canceled || !result.assets?.[0]?.uri) return
+    setUploading(true)
+    try {
+      await sendImage(result.assets[0].uri)
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
+    } finally {
+      setUploading(false)
     }
   }
 
-  const scrollToBottom = () => {
-    if (!listRef.current) return
-    if (contentHeight > 0 && listHeight > 0) {
-      const offset = Math.max(0, contentHeight - listHeight)
-      listRef.current.scrollToOffset({ offset, animated: true })
-    } else {
-      listRef.current.scrollToEnd({ animated: true })
+  // When keyboard opens, scroll to bottom so latest messages are visible
+  useEffect(() => {
+    if (keyboardOpen) {
+      const id = setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true })
+      }, 150)
+      return () => clearTimeout(id)
     }
-    setIsAtBottom(true)
-  }
+  }, [keyboardOpen])
 
   const handleEdit = () => {
     setMenuOpen(false)
@@ -189,52 +235,110 @@ export default function ChatScreen() {
           <Avatar
             initials={msg.sender?.avatar_initials ?? '?'}
             color={msg.sender?.avatar_color}
+            uri={msg.sender?.avatar_url}
             size="sm"
           />
         )}
         <View style={[styles.msgBubbleWrap, isMe && styles.msgBubbleWrapMe]}>
-          {!isMe && (
-            <Text style={styles.msgSender}>{msg.sender?.name}</Text>
+          <Text style={styles.msgSender}>{isMe ? 'You' : (msg.sender?.name ?? 'Unknown')}</Text>
+          {msg.image_url ? (
+            <Pressable
+              style={[styles.msgImageBubble, isMe ? styles.msgImageBubbleMe : styles.msgImageBubbleThem]}
+              onPress={() => setFullScreenImageUri(msg.image_url ?? null)}
+            >
+              <Image source={{ uri: msg.image_url }} style={styles.msgImage} resizeMode="cover" />
+            </Pressable>
+          ) : (
+            <View style={[styles.msgBubble, isMe ? styles.msgBubbleMe : styles.msgBubbleThem]}>
+              <Text style={[styles.msgText, isMe ? styles.msgTextMe : styles.msgTextThem]}>
+                {msg.text}
+              </Text>
+            </View>
           )}
-          <View style={[styles.msgBubble, isMe ? styles.msgBubbleMe : styles.msgBubbleThem]}>
-            <Text style={[styles.msgText, isMe ? styles.msgTextMe : styles.msgTextThem]}>
-              {msg.text}
-            </Text>
-          </View>
           <Text style={styles.msgTime}>{fmtMessageTime(msg.created_at)}</Text>
         </View>
       </View>
     )
   }
 
+  // Always render message list when we have roomId so realtime messages work even if room meta is still loading
+  if (!roomId) return null
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <Modal
+        visible={!!fullScreenImageUri}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFullScreenImageUri(null)}
+      >
+        <Pressable style={styles.fullScreenImageOverlay} onPress={() => setFullScreenImageUri(null)}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => {}}>
+            <Image
+              source={{ uri: fullScreenImageUri ?? '' }}
+              style={[styles.fullScreenImage, { width: screenWidth, height: screenHeight }]}
+              resizeMode="contain"
+            />
+          </Pressable>
+          <TouchableOpacity
+            style={[styles.fullScreenCloseBtn, { top: insets.top + 8 }]}
+            onPress={() => setFullScreenImageUri(null)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <X size={28} color={colors.white} />
+          </TouchableOpacity>
+        </Pressable>
+      </Modal>
+
+      {uploading && (
+        <View style={styles.uploadingOverlay}>
+          <ActivityIndicator size="large" color={colors.white} />
+          <Text style={styles.uploadingText}>Uploading…</Text>
+        </View>
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ChevronLeft size={28} color={colors.slate400} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{room?.title ?? '...'}</Text>
+          {room?.club && (
+            <Avatar
+              initials={room.club.avatar_initials ?? (room.club.name?.slice(0, 2).toUpperCase() ?? 'CL')}
+              size="sm"
+              color={room.club.color}
+              uri={room.club.avatar_url}
+            />
+          )}
+          <Text style={styles.headerTitle} numberOfLines={1}>{headerTitle}</Text>
         </View>
-        {isOwner && (
-          <View style={styles.menuWrap}>
-            <TouchableOpacity onPress={() => setMenuOpen(o => !o)} style={styles.menuBtn}>
-              <MoreVertical size={20} color={colors.slate400} />
-            </TouchableOpacity>
-            {menuOpen && (
-              <View style={styles.dropdown}>
-                <TouchableOpacity style={styles.dropdownItem} onPress={handleEdit}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Pencil size={14} color={colors.slate700} /><Text style={styles.dropdownText}>Edit {isRide ? 'Ride' : 'Chat Room'}</Text></View>
-                </TouchableOpacity>
-                <View style={styles.dropdownDivider} />
-                <TouchableOpacity style={styles.dropdownItem} onPress={handleDelete}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Trash2 size={14} color={colors.red600} /><Text style={[styles.dropdownText, styles.dropdownDanger]}>Delete</Text></View>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
+        <View style={styles.headerRight}>
+          {isOwner && (
+            <View style={styles.menuWrap}>
+              <TouchableOpacity onPress={() => setMenuOpen(o => !o)} style={styles.menuBtn}>
+                <MoreVertical size={20} color={colors.slate400} />
+              </TouchableOpacity>
+              {menuOpen && (
+                <View style={styles.dropdown}>
+                  <TouchableOpacity style={styles.dropdownItem} onPress={handleEdit}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Pencil size={14} color={colors.slate700} />
+                      <Text style={styles.dropdownText}>Edit {isRide ? 'Ride' : 'Chat Room'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.dropdownDivider} />
+                  <TouchableOpacity style={styles.dropdownItem} onPress={handleDelete}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Trash2 size={14} color={colors.red600} />
+                      <Text style={[styles.dropdownText, styles.dropdownDanger]}>Delete</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
       </View>
 
       {menuOpen && (
@@ -246,119 +350,231 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         style={styles.kav}
-        behavior={Platform.OS === 'ios' && keyboardOpen ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        {/* Messages */}
-        <FlatList
-          ref={listRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={m => m.id}
-          style={styles.messageList}
-          contentContainerStyle={styles.messageContent}
-          onLayout={e => setListHeight(e.nativeEvent.layout.height)}
-          showsVerticalScrollIndicator={false}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="handled"
-          onContentSizeChange={handleContentSizeChange}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          ListHeaderComponent={
-            <View>
-              <View style={styles.expiryNotice}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Timer size={12} color={colors.slate400} /><Text style={styles.expiryNoticeText}>Chat auto-deletes after 24h</Text></View>
-              </View>
-              {rideRoute && (
-                <RouteMap
-                  polyline={rideRoute.polyline}
-                  distanceKm={rideRoute.distanceKm}
-                  elevationGainM={rideRoute.elevationGainM}
-                  routeName={rideRoute.name}
-                  size="chat"
-                  style={styles.chatRouteMap}
-                />
-              )}
-            </View>
-          }
-          ListEmptyComponent={
-            !loading ? (
-              <View style={styles.emptyMessages}>
-                <MessageCircle size={36} color={colors.slate300} />
-                <Text style={styles.emptyMessagesLabel}>No messages yet — say something!</Text>
-              </View>
-            ) : null
-          }
-        />
-
-        {/* Scroll-to-bottom + Quick replies */}
-        {!isAtBottom && messages.length > 0 && (
-          <View style={styles.scrollToBottomWrap}>
-            <TouchableOpacity
-              style={styles.scrollToBottomBtn}
-              activeOpacity={0.85}
-              onPress={scrollToBottom}
-            >
-              <ChevronLeft
-                size={16}
-                color={colors.white}
-                // rotate left chevron to point down
-                style={{ transform: [{ rotate: '90deg' }] }}
-              />
-              <Text style={styles.scrollToBottomText}>New messages</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Quick replies */}
-        <View style={styles.quickReplies}>
-          <FlatList
-            horizontal
-            data={quickReplies}
-            keyExtractor={q => q.label}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.quickReply}
-                onPress={() => { handleQuickReply(item.text) }}
-              >
-                <Text style={styles.quickReplyText}>{item.label}</Text>
-              </TouchableOpacity>
-            )}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.lg }}
+        <View style={styles.body}>
+          <MessageList
+            messages={messages}
+            loading={loading}
+            roomTitle={room?.title ?? headerTitle}
+            roomExpiry={room?.expiry ?? null}
+            rideRoute={rideRoute}
+            listRef={listRef}
+            renderMessage={renderMessage}
+            keyboardOpen={keyboardOpen}
+            isNearBottomRef={isNearBottomRef}
+            hasInitialScrolledRef={hasInitialScrolledRef}
+            onMarkAsRead={markAsRead}
+            lastMarkAsReadRef={lastMarkAsReadRef}
           />
-        </View>
-
-        {/* Input */}
-        <View style={[styles.inputRow, { paddingBottom: 0 }]}>
-          <View style={styles.inputWrap}>
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              placeholder="Say something..."
-              placeholderTextColor={colors.slate400}
-              value={input}
-              onChangeText={setInput}
-              onSubmitEditing={handleSend}
-              returnKeyType="send"
-              multiline
-            />
-          </View>
-          <TouchableOpacity
-            style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!input.trim()}
-          >
-            <Send size={18} color={colors.white} />
-          </TouchableOpacity>
+          <ChatComposer
+            quickReplies={quickReplies}
+            input={input}
+            setInput={setInput}
+            onSend={handleSend}
+            onQuickReply={handleQuickReply}
+            onPickImage={handlePickImage}
+            inputRef={inputRef}
+            keyboardOpen={keyboardOpen}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
 
+const MARK_AS_READ_THROTTLE_MS = 2000
+
+function ChatExpiryText({ expiry }: { expiry: string }) {
+  const [remaining, setRemaining] = useState('')
+  useEffect(() => {
+    const update = () => {
+      const diff = new Date(expiry).getTime() - Date.now()
+      if (diff <= 0) { setRemaining('Expired'); return }
+      const h = Math.floor(diff / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      setRemaining(`${h}h ${m}m`)
+    }
+    update()
+    const id = setInterval(update, 60000)
+    return () => clearInterval(id)
+  }, [expiry])
+  return <Text style={styles.expiryNoticeText}>{remaining}</Text>
+}
+
+type MessageListProps = {
+  messages: Message[]
+  loading: boolean
+  roomTitle?: string
+  roomExpiry: string | null
+  rideRoute: { polyline: string; distanceKm?: number; elevationGainM?: number; name?: string } | null
+  listRef: React.RefObject<FlatList | null>
+  renderMessage: ({ item }: { item: Message }) => React.ReactElement
+  keyboardOpen: boolean
+  isNearBottomRef: React.MutableRefObject<boolean>
+  hasInitialScrolledRef: React.MutableRefObject<boolean>
+  onMarkAsRead?: () => void
+  lastMarkAsReadRef?: React.MutableRefObject<number>
+}
+
+function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, listRef, renderMessage, keyboardOpen, isNearBottomRef, hasInitialScrolledRef, onMarkAsRead, lastMarkAsReadRef }: MessageListProps) {
+  return (
+    <FlatList
+      ref={listRef}
+      data={messages}
+      renderItem={renderMessage}
+      keyExtractor={m => m.id}
+      style={styles.messageList}
+      contentContainerStyle={[
+        styles.messageContent,
+        { paddingBottom: keyboardOpen ? 20 : 20 },
+      ]}
+      showsVerticalScrollIndicator={false}
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
+      onScroll={(e) => {
+        const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent
+        const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y
+        const nearBottom = distanceFromBottom < 150
+        isNearBottomRef.current = nearBottom
+        if (nearBottom && onMarkAsRead && lastMarkAsReadRef) {
+          const now = Date.now()
+          if (now - lastMarkAsReadRef.current > MARK_AS_READ_THROTTLE_MS) {
+            lastMarkAsReadRef.current = now
+            onMarkAsRead()
+          }
+        }
+      }}
+      scrollEventThrottle={100}
+      onContentSizeChange={() => {
+        if (messages.length === 0) return
+        // On enter, scroll to latest message; with many messages FlatList reports size
+        // before all items are laid out, so run scrollToEnd several times with delays
+        if (!hasInitialScrolledRef.current) {
+          hasInitialScrolledRef.current = true
+          const scrollToEnd = () => listRef.current?.scrollToEnd({ animated: false })
+          scrollToEnd()
+          setTimeout(scrollToEnd, 100)
+          setTimeout(scrollToEnd, 300)
+          setTimeout(scrollToEnd, 600)
+          setTimeout(scrollToEnd, 1000)
+          return
+        }
+        if (isNearBottomRef.current) {
+          listRef.current?.scrollToEnd({ animated: true })
+        }
+      }}
+      ListHeaderComponent={
+        <View>
+          {roomExpiry ? (
+            <View style={styles.expiryNotice}>
+              <Text style={styles.expiryNoticeText}>This ride chat will be removed in </Text>
+              <ChatExpiryText expiry={roomExpiry} />
+            </View>
+          ) : null}
+          {rideRoute && (
+            <RouteMap
+              polyline={rideRoute.polyline}
+              distanceKm={rideRoute.distanceKm}
+              elevationGainM={rideRoute.elevationGainM}
+              routeName={rideRoute.name}
+              size="chat"
+              style={styles.chatRouteMap}
+            />
+          )}
+        </View>
+      }
+      ListEmptyComponent={
+        !loading ? (
+          <View style={styles.emptyMessages}>
+            {roomTitle ? (
+              <Text style={styles.emptyMessagesTitle} numberOfLines={2}>{roomTitle}</Text>
+            ) : null}
+            <MessageCircle size={36} color={colors.slate300} />
+            <Text style={styles.emptyMessagesLabel}>No messages yet — say something!</Text>
+          </View>
+        ) : null
+      }
+    />
+  )
+}
+
+type ChatComposerProps = {
+  quickReplies: { label: string; text: string }[]
+  input: string
+  setInput: (val: string) => void
+  onSend: () => void
+  onQuickReply: (text: string) => Promise<void>
+  onPickImage: () => void
+  inputRef: React.RefObject<TextInput | null>
+  keyboardOpen: boolean
+}
+
+function ChatComposer({
+  quickReplies,
+  input,
+  setInput,
+  onSend,
+  onQuickReply,
+  onPickImage,
+  inputRef,
+  keyboardOpen,
+}: ChatComposerProps) {
+  return (
+    <View style={styles.composer}>
+      <View style={styles.quickReplies}>
+        <FlatList
+          horizontal
+          data={quickReplies}
+          keyExtractor={q => q.label}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.quickReply}
+              onPress={() => { onQuickReply(item.text) }}
+            >
+              <Text style={styles.quickReplyText}>{item.label}</Text>
+            </TouchableOpacity>
+          )}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.lg }}
+        />
+      </View>
+
+      <View style={[styles.inputRow, { paddingBottom: keyboardOpen ? 16 : 24 }]}>
+        <TouchableOpacity style={styles.attachBtn} onPress={onPickImage}>
+          <Paperclip size={20} color={colors.slate500} />
+        </TouchableOpacity>
+        <View style={styles.inputWrap}>
+          <TextInput
+            ref={inputRef}
+            style={styles.input}
+            placeholder="Say something..."
+            placeholderTextColor={colors.slate400}
+            selectionColor={colors.slate800}
+            value={input}
+            onChangeText={setInput}
+            onSubmitEditing={onSend}
+            returnKeyType="send"
+            multiline
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
+          onPress={onSend}
+          disabled={!input.trim()}
+        >
+          <Send size={18} color={colors.white} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
+  spinnerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   kav: { flex: 1 },
 
   // Header
@@ -370,8 +586,9 @@ const styles = StyleSheet.create({
     zIndex: 100, elevation: 0,
   },
   backBtn: { padding: 4 },
-  headerInfo: { flex: 1, minWidth: 0 },
-  headerTitle: { fontSize: fontSize.md, fontWeight: fontWeight.bold, color: colors.slate900 },
+  headerInfo: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerTitle: { flex: 1, fontSize: 16, fontWeight: fontWeight.bold, color: colors.slate900 },
 
   menuWrap: { position: 'relative' },
   menuBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
@@ -386,47 +603,39 @@ const styles = StyleSheet.create({
   dropdownDanger: { color: colors.red600 },
   dropdownDivider: { height: 1, backgroundColor: colors.slate100 },
 
+  body: { flex: 1 },
+
   // Messages
   messageList: { flex: 1, backgroundColor: colors.slate50 },
   messageContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-    gap: 12,
+    paddingTop: spacing.xl,
+    gap: spacing.lg,
   },
   expiryNotice: {
-    alignSelf: 'center', marginBottom: 12,
-    backgroundColor: colors.white, borderRadius: radius.full,
-    paddingHorizontal: 14, paddingVertical: 7,
-    borderWidth: 1, borderColor: colors.slate200,
+    alignSelf: 'center',
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: colors.slate200,
   },
   expiryNoticeText: { fontSize: fontSize.xs, color: colors.slate400 },
   chatRouteMap: { marginHorizontal: spacing.lg, marginBottom: 12, borderRadius: 12 },
-  emptyMessages: { alignItems: 'center', paddingVertical: 48, gap: 8 },
-  emptyMessagesLabel: { fontSize: fontSize.sm, color: colors.slate400 },
-
-  scrollToBottomWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 84, // just above input + quick replies
-    alignItems: 'center',
-  },
-  scrollToBottomBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.blue500,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radius.full,
-    ...shadow.blue,
-  },
-  scrollToBottomText: {
-    fontSize: fontSize.xs,
+  emptyMessages: { alignItems: 'center', paddingVertical: 4, gap: 8 },
+  emptyMessagesTitle: {
+    fontSize: 24,
     fontWeight: fontWeight.semibold,
-    color: colors.white,
+    color: colors.slate700,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    marginBottom: 16,
   },
+  emptyMessagesLabel: { fontSize: fontSize.sm, color: colors.slate400 },
 
   msgRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-end' },
   msgRowMe: { flexDirection: 'row-reverse' },
@@ -452,10 +661,12 @@ const styles = StyleSheet.create({
   msgTime: { fontSize: 10, color: colors.slate400, paddingHorizontal: 4 },
 
   // Quick replies
-  quickReplies: {
-    paddingVertical: 10,
+  composer: {
     borderTopWidth: 1, borderTopColor: colors.slate100,
     backgroundColor: colors.white,
+  },
+  quickReplies: {
+    paddingVertical: 10,
   },
   quickReply: {
     paddingHorizontal: 14, paddingVertical: 7,
@@ -464,24 +675,100 @@ const styles = StyleSheet.create({
   },
   quickReplyText: { fontSize: fontSize.xs, color: colors.slate600 },
 
+  // Image messages
+  msgImageBubble: {
+    width: 220,
+    height: 220,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  msgImageBubbleMe: {
+    borderBottomRightRadius: 4,
+  },
+  msgImageBubbleThem: {
+    borderBottomLeftRadius: 4,
+  },
+  msgImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
+  },
+
+  // Full-screen image popup
+  fullScreenImageOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  fullScreenCloseBtn: {
+    position: 'absolute',
+    right: spacing.lg,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 200,
+  },
+  uploadingText: {
+    marginTop: 12,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    color: colors.white,
+  },
+
   // Input
+  attachBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.slate100,
+  },
   inputRow: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 10,
-    paddingHorizontal: spacing.lg, paddingTop: spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.md,
     borderTopWidth: 1, borderTopColor: colors.slate200,
     backgroundColor: colors.white,
   },
   inputWrap: {
-    flex: 1, backgroundColor: colors.slate100,
+    flex: 1,
+    backgroundColor: colors.slate100,
     borderWidth: 1, borderColor: colors.slate200,
-    borderRadius: radius.xxl, paddingHorizontal: spacing.lg,
-    height: 42, justifyContent: 'center', maxHeight: 42,
+    borderRadius: radius.xxl,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 3,
+    minHeight: 50,
+    maxHeight: 96,
   },
-  input: { fontSize: fontSize.base, color: colors.slate800, lineHeight: 20 },
+  input: {
+    fontSize: fontSize.base,
+    color: colors.slate800,
+    lineHeight: 20,
+    textAlignVertical: 'top',
+  },
   sendBtn: {
     width: 42, height: 42, borderRadius: 21,
     backgroundColor: colors.blue500, alignItems: 'center', justifyContent: 'center',
     ...shadow.blue,
   },
-  sendBtnDisabled: { backgroundColor: colors.slate200 },
+  sendBtnDisabled: {
+    backgroundColor: colors.blue200,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
 })

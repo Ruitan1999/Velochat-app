@@ -125,8 +125,13 @@ export default function NewChatScreen() {
             style={[styles.selectable, selectedRiders.includes(r.id) && styles.selectableActive]}
             onPress={() => toggleRider(r.id)}
           >
-            <Avatar initials={r.avatar_initials} color={r.avatar_color} size="sm" />
-            <Text style={[styles.selectableText, selectedRiders.includes(r.id) && { color: colors.blue700 }]}>{r.name}</Text>
+            <Avatar
+              initials={r.avatar_initials}
+              color={r.avatar_color}
+              uri={r.avatar_url}
+              size="sm"
+            />
+            <Text style={[styles.selectableText, selectedRiders.includes(r.id) && { color: colors.blue700 }]}>{r.id === user?.id ? 'You' : r.name}</Text>
             {selectedRiders.includes(r.id) && <Check size={16} color={colors.blue500} />}
           </TouchableOpacity>
         ))}
