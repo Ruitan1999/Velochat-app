@@ -39,6 +39,7 @@ create table public.clubs (
   avatar_initials text not null,
   color text default '#3B82F6',
   description text,
+  visibility text check (visibility in ('public','private')) default 'private',
   admin_id uuid references profiles(id) on delete set null,
   member_count int default 1,
   created_at timestamptz default now()

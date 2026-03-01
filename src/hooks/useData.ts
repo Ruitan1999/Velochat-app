@@ -27,8 +27,8 @@ export function useRides() {
       .from('rides')
       .select(`
         *,
-        organizer:profiles!organizer_id(id, name, handle, avatar_initials, avatar_color),
-        rsvps:ride_rsvps(*, profile:profiles(id, name, avatar_initials, avatar_color)),
+        organizer:profiles!organizer_id(id, name, avatar_initials, avatar_color, avatar_url),
+        rsvps:ride_rsvps(*, profile:profiles!user_id(id, name, avatar_initials, avatar_color, avatar_url)),
         chat_rooms(*)
       `)
       .or(`organizer_id.eq.${user.id},club_id.in.(${clubIds.join(',')})`)
@@ -79,6 +79,12 @@ export function useRides() {
         schema: 'public',
         table: 'messages',
       }, () => fetch())
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'chat_participants',
+        filter: `user_id=eq.${user.id}`,
+      }, () => fetch())
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -101,7 +107,7 @@ export function useChatRooms() {
       .from('chat_rooms')
       .select(`
         *,
-        participants:chat_participants(user_id, profile:profiles(id, name, avatar_initials, avatar_color))
+        participants:chat_participants(user_id, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))
       `)
       .eq('type', 'general')
       .order('created_at', { ascending: false })
@@ -110,11 +116,41 @@ export function useChatRooms() {
     const myRooms = (data ?? []).filter((r: ChatRoom & { participants: { user_id: string }[] }) =>
       r.participants?.some((p: { user_id: string }) => p.user_id === user.id)
     )
-    setRooms(myRooms)
+
+    // Attach unread counts per room for this user
+    const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
+    const unreadByRoom = new Map<string, number>()
+    ;(unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
+      unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
+    })
+
+    const withUnread = myRooms.map((r: any) => ({
+      ...r,
+      unread_count: unreadByRoom.get(r.id) ?? 0,
+    }))
+
+    setRooms(withUnread)
     setLoading(false)
   }, [user])
 
   useEffect(() => { fetch() }, [fetch])
+
+  useEffect(() => {
+    if (!user) return
+
+    const channel = supabase
+      .channel('general-chat-unreads')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+      }, () => {
+        fetch()
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [user, fetch])
 
   return { rooms, loading, refetch: fetch, setRooms }
 }
@@ -130,14 +166,14 @@ export function useMessages(roomId: string) {
   useEffect(() => {
     if (!roomId) return
 
-    // Initial fetch
     supabase
       .from('messages')
-      .select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color)')
+      .select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color, avatar_url)')
       .eq('room_id', roomId)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(100)
       .then(({ data }) => {
-        setMessages(data ?? [])
+        setMessages((data ?? []).reverse())
         setLoading(false)
       })
 
@@ -151,14 +187,9 @@ export function useMessages(roomId: string) {
         filter: `room_id=eq.${roomId}`,
       }, async (payload) => {
         const newId = payload.new.id
-        // Skip if we already have this message (from optimistic insert)
-        setMessages(prev => {
-          if (prev.some(m => m.id === newId)) return prev
-          return prev // will be replaced below
-        })
         const { data: msg } = await supabase
           .from('messages')
-          .select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color)')
+          .select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color, avatar_url)')
           .eq('id', newId)
           .single()
         if (msg) setMessages(prev => prev.some(m => m.id === newId) ? prev : [...prev, msg])
@@ -172,7 +203,7 @@ export function useMessages(roomId: string) {
     if (!user || !text.trim()) return
 
     const optimistic: Message = {
-      id: `temp-${Date.now()}`,
+      id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       room_id: roomId,
       sender_id: user.id,
       text: text.trim(),
@@ -191,7 +222,7 @@ export function useMessages(roomId: string) {
       room_id: roomId,
       sender_id: user.id,
       text: text.trim(),
-    }).select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color)').single()
+    }).select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color, avatar_url)').single()
 
     if (error) {
       console.error('sendMessage failed:', error.message, error.details, error.hint)
@@ -204,7 +235,70 @@ export function useMessages(roomId: string) {
     }
   }
 
-  return { messages, loading, sendMessage }
+  const sendImage = async (uri: string) => {
+    if (!user) return
+
+    const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg'
+    const fileName = `${roomId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+    const response = await fetch(uri)
+    const blob = await response.blob()
+    const arrayBuffer = await new Response(blob).arrayBuffer()
+
+    const { error: uploadError } = await supabase.storage
+      .from('chat-attachments')
+      .upload(fileName, arrayBuffer, {
+        contentType: blob.type || `image/${ext}`,
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error('Upload failed:', uploadError.message)
+      return
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(fileName)
+
+    const imageUrl = urlData.publicUrl
+
+    const optimistic: Message = {
+      id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      room_id: roomId,
+      sender_id: user.id,
+      text: '',
+      image_url: imageUrl,
+      created_at: new Date().toISOString(),
+      sender: {
+        id: user.id,
+        name: user.user_metadata?.name ?? 'You',
+        avatar_initials: user.user_metadata?.avatar_initials ?? '?',
+        avatar_color: user.user_metadata?.avatar_color ?? '#3B82F6',
+      },
+    } as Message
+
+    setMessages(prev => [...prev, optimistic])
+
+    const { data, error } = await supabase.from('messages').insert({
+      room_id: roomId,
+      sender_id: user.id,
+      text: '',
+      image_url: imageUrl,
+    }).select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color, avatar_url)').single()
+
+    if (error) {
+      console.error('sendImage message failed:', error.message)
+      setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+      return
+    }
+
+    if (data) {
+      setMessages(prev => prev.map(m => m.id === optimistic.id ? data : m))
+    }
+  }
+
+  return { messages, loading, sendMessage, sendImage }
 }
 
 // ─── useClubs ─────────────────────────────────────────────────
@@ -221,7 +315,7 @@ export function useClubs() {
       .from('clubs')
       .select(`
         *,
-        members:club_members(user_id, role, profile:profiles(id, name, handle, avatar_initials, avatar_color))
+        members:club_members(user_id, role, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))
       `)
       .order('name')
 
@@ -237,12 +331,13 @@ export function useClubs() {
   useEffect(() => { fetch() }, [fetch])
 
   const createClub = async (data: {
-    name: string, handle: string, avatar_initials: string, color: string, description: string
+    name: string; avatar_initials: string; color: string; description: string; visibility?: 'public' | 'private'; avatarImageUri?: string
   }) => {
-    if (!user) return
+    if (!user) return { error: null, club: null }
+    const { avatarImageUri: _uri, ...insertData } = data
     const { data: club, error } = await supabase
       .from('clubs')
-      .insert({ ...data, admin_id: user.id })
+      .insert({ ...insertData, visibility: insertData.visibility ?? 'private', admin_id: user.id })
       .select()
       .single()
 
@@ -250,7 +345,7 @@ export function useClubs() {
       await supabase.from('club_members').insert({ club_id: club.id, user_id: user.id, role: 'admin' })
       fetch()
     }
-    return { error }
+    return { error, club: club ?? null }
   }
 
   return { clubs, loading, refetch: fetch, createClub, setClubs }
@@ -270,7 +365,7 @@ export function useRiders() {
 
     const [{ data: profiles }, { data: friendships }] = await Promise.all([
       supabase.from('profiles').select('*').neq('id', user.id).order('name'),
-      supabase.from('friendships').select('*, requester:profiles!requester_id(id,name,avatar_initials,avatar_color), addressee:profiles!addressee_id(id,name,avatar_initials,avatar_color)')
+      supabase.from('friendships').select('*, requester:profiles!requester_id(id,name,avatar_initials,avatar_color,avatar_url), addressee:profiles!addressee_id(id,name,avatar_initials,avatar_color,avatar_url)')
         .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
         .eq('status', 'accepted'),
     ])

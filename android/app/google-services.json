@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "970576919329",
+    "project_id": "velochat-3a2d5",
+    "storage_bucket": "velochat-3a2d5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:970576919329:android:d462fc49a18f9fc56adc60",
+        "android_client_info": {
+          "package_name": "com.yourname.velochat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBOhr-F01yXOx5fDGdrLsDqOlYFAXHvrfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

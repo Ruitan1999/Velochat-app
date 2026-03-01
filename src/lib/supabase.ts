@@ -21,12 +21,12 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 export type Profile = {
   id: string
   name: string
-  handle: string
   avatar_initials: string
   avatar_color: string
   avatar_url?: string
   bio?: string
   fcm_token?: string
+  visibility?: 'public' | 'private'
   created_at: string
 }
 
@@ -44,10 +44,11 @@ export type Friendship = {
 export type Club = {
   id: string
   name: string
-  handle: string
   avatar_initials: string
+  avatar_url?: string
   color: string
   description?: string
+  visibility?: 'public' | 'private'
   admin_id: string
   member_count: number
   created_at: string
@@ -117,6 +118,7 @@ export type Message = {
   room_id: string
   sender_id: string
   text: string
+  image_url?: string
   created_at: string
   // joined
   sender?: Profile

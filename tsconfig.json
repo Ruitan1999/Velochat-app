@@ -2,6 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Ensure JSX is enabled for all .tsx files (React Native)
+    "jsx": "react-native",
+    // Make default React imports and CJS/ESM interop work smoothly
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "paths": {
       "@/*": [
         "./src/*"

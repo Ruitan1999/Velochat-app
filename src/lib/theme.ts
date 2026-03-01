@@ -117,17 +117,26 @@ export const shadow = {
 }
 
 // Avatar color lookup by initials
-export const avatarColors: Record<string, string> = {
-  AR: colors.blue500,
-  ST: colors.cyan500,
-  ML: colors.violet500,
-  JK: colors.orange500,
-  CP: colors.rose500,
-  DW: colors.teal500,
-  EV: colors.blue600,
-  HT: colors.violet600,
-}
+// Avatar colors: deterministic "random" palette with good contrast for white text.
+// All colors are dark enough to meet WCAG AA for typical text sizes.
+const avatarPalette = [
+  colors.blue700,
+  colors.blue600,
+  colors.slate700,
+  colors.slate800,
+  colors.violet600,
+  colors.emerald600,
+  colors.teal500,
+  colors.rose500,
+  colors.orange500,
+]
 
 export function getAvatarColor(initials: string): string {
-  return avatarColors[initials] ?? colors.slate400
+  const key = (initials || '??').toUpperCase()
+  let hash = 0
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+  }
+  const index = hash % avatarPalette.length
+  return avatarPalette[index]
 }

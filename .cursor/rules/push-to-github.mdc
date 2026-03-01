@@ -1,0 +1,14 @@
+---
+description: Push all project changes to GitHub when the user asks
+alwaysApply: true
+---
+
+# Push to GitHub
+
+When the user asks to "push to GitHub", "push changes", "push my changes", or similar:
+
+1. **Stage** all changes: `git add .` (respects .gitignore; do not add `node_modules` or `.expo/web/cache` if they are not ignored).
+2. **Commit** with a clear message. If the user did not give a message, use a short descriptive one based on the changes (e.g. "Update app and docs", "Fix chat and add OTP flow").
+3. **Push** to the tracking branch: `git push` (or `git push -u origin main` if upstream is not set).
+
+Use `git status` first if needed to confirm what will be committed. Request `network` and `git_write` permissions when running push.

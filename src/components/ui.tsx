@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
-  StyleSheet, ViewStyle, TextStyle,
+  StyleSheet, ViewStyle, TextStyle, Image,
 } from 'react-native'
 import { Timer } from 'lucide-react-native'
 import { colors, radius, fontSize, fontWeight, spacing, shadow, getAvatarColor } from '../lib/theme'
@@ -22,41 +22,78 @@ export function Avatar({
   initials,
   size = 'md',
   color,
+  uri,
   style,
 }: {
   initials: string
   size?: AvatarSize
   color?: string
+  uri?: string | null
   style?: ViewStyle
 }) {
   const { size: dim, font } = avatarDims[size]
   const bg = color ?? getAvatarColor(initials)
+  const [imageError, setImageError] = React.useState(false)
+  const effectiveUri = (uri && uri.trim()) || null
+  const showImage = effectiveUri && !imageError
+
+  React.useEffect(() => {
+    setImageError(false)
+  }, [effectiveUri])
 
   return (
-    <View style={[{
-      width: dim, height: dim, borderRadius: dim / 2,
-      backgroundColor: bg,
-      alignItems: 'center', justifyContent: 'center',
-      flexShrink: 0,
-    }, style]}>
-      <Text style={{ color: colors.white, fontSize: font, fontWeight: fontWeight.bold }}>
-        {initials}
-      </Text>
+    <View
+      style={[{
+        width: dim,
+        height: dim,
+        borderRadius: dim / 2,
+        backgroundColor: bg,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        overflow: 'hidden',
+      }, style]}
+    >
+      {showImage ? (
+        <Image
+          source={{ uri: effectiveUri! }}
+          style={{ width: dim, height: dim }}
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <Text style={{ color: colors.white, fontSize: font, fontWeight: fontWeight.bold }}>
+          {initials}
+        </Text>
+      )}
     </View>
   )
 }
 
 // ─── AvatarStack ──────────────────────────────────────────────
 
-export function AvatarStack({ initials, max = 4 }: { initials: string[]; max?: number }) {
-  const shown = initials.slice(0, max)
-  const extra = initials.length - max
+export type AvatarStackItem = { initials: string; color?: string; uri?: string | null }
+
+export function AvatarStack({
+  initials,
+  avatars,
+  max = 4,
+}: {
+  initials?: string[]
+  avatars?: AvatarStackItem[]
+  max?: number
+}) {
+  const items: AvatarStackItem[] = avatars ?? (initials ?? []).map((i) => ({ initials: i }))
+  const shown = items.slice(0, max)
+  const extra = items.length - max
   return (
     <View style={{ flexDirection: 'row' }}>
-      {shown.map((av, i) => (
+      {shown.map((item, i) => (
         <Avatar
-          key={av + i}
-          initials={av}
+          key={item.initials + i}
+          initials={item.initials}
+          color={item.color}
+          uri={item.uri}
           size="sm"
           style={{ marginLeft: i === 0 ? 0 : -6, borderWidth: 2, borderColor: colors.white }}
         />
@@ -127,8 +164,8 @@ export function Button({
 }) {
   const variantStyles: Record<ButtonVariant, { container: ViewStyle; text: TextStyle }> = {
     primary: {
-      container: { backgroundColor: disabled ? colors.slate200 : colors.blue500, ...shadow.blue },
-      text: { color: disabled ? colors.slate400 : colors.white },
+      container: { backgroundColor: disabled ? colors.blue200 : colors.blue500, ...(disabled ? {} : shadow.blue) },
+      text: { color: disabled ? colors.white : colors.white },
     },
     secondary: {
       container: { backgroundColor: colors.slate100 },
