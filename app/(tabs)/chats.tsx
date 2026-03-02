@@ -418,8 +418,8 @@ export function RideCard({ ride, onRideDeleted }: { ride: Ride; onRideDeleted?: 
           activeOpacity={0.8}
           onPress={() => setShowRsvpDrawer(true)}
         >
-          {/* Show up to 6 riders, rest collapsed into +X avatar */}
-          <AvatarStack avatars={inAvatarItems} max={6} />
+          {/* Show up to 10 riders, rest collapsed into +X avatar */}
+          <AvatarStack avatars={inAvatarItems} max={10} />
         </TouchableOpacity>
       </View>
 
