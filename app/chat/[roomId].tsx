@@ -14,10 +14,11 @@ import { supabase, ChatRoom, Message } from '../../src/lib/supabase'
 type ChatRoomWithClub = ChatRoom & {
   club?: { id: string; name: string; avatar_url?: string | null; avatar_initials?: string; color?: string } | null
 }
-import { Avatar } from '../../src/components/ui'
+type ChatAvatarStackItem = { initials: string; color?: string; uri?: string | null }
+import { Avatar, AvatarStack } from '../../src/components/ui'
 import { RouteMap } from '../../src/components/RouteMap'
 import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
-import { fmtMessageTime } from '../../src/lib/utils'
+import { fmtMessageTime, fmtTime } from '../../src/lib/utils'
 import { ChevronLeft, MoreVertical, Pencil, Trash2, MessageCircle, Send, Paperclip, X } from 'lucide-react-native'
 import * as ImagePicker from 'expo-image-picker'
 
@@ -46,6 +47,8 @@ export default function ChatScreen() {
   const [input, setInput] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [rideRoute, setRideRoute] = useState<{ polyline: string; distanceKm?: number; elevationGainM?: number; name?: string } | null>(null)
+  const [rideDetail, setRideDetail] = useState<{ time?: string; location?: string; date?: string } | null>(null)
+  const [rideInAvatars, setRideInAvatars] = useState<ChatAvatarStackItem[]>([])
   const listRef = useRef<FlatList | null>(null)
   const inputRef = useRef<TextInput | null>(null)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
@@ -102,11 +105,11 @@ export default function ChatScreen() {
     setRoom(data)
     if (data?.title) setHeaderTitle(data.title)
 
-    // For ride chats, pull route + keep title in sync with ride title
+    // For ride chats, pull route + keep title in sync with ride title + time/location for message body
     if (data?.ride_id) {
       const { data: ride } = await supabase
         .from('rides')
-        .select('route_polyline, route_distance_km, route_elevation_m, route_name, title')
+        .select('route_polyline, route_distance_km, route_elevation_m, route_name, title, time, location, date, rsvps:ride_rsvps(status, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))')
         .eq('id', data.ride_id)
         .single()
 
@@ -121,8 +124,58 @@ export default function ChatScreen() {
       if (ride?.title) {
         setHeaderTitle(ride.title)
       }
+      setRideDetail({
+        time: ride?.time,
+        location: ride?.location,
+        date: ride?.date,
+      })
+      const inItems =
+        (ride?.rsvps ?? [])
+          .filter((r: any) => r.status === 'in')
+          .map((r: any) => ({
+            initials: r.profile?.avatar_initials ?? '?',
+            color: r.profile?.avatar_color,
+            uri: r.profile?.avatar_url,
+          }))
+      setRideInAvatars(inItems)
+    } else {
+      setRideDetail(null)
+      setRideInAvatars([])
     }
   }, [roomId, user])
+
+  const refetchRideRsvps = useCallback(async (rideId: string) => {
+    const { data } = await supabase
+      .from('ride_rsvps')
+      .select('status, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url)')
+      .eq('ride_id', rideId)
+    const inItems = (data ?? [])
+      .filter((r: any) => r.status === 'in')
+      .map((r: any) => ({
+        initials: r.profile?.avatar_initials ?? '?',
+        color: r.profile?.avatar_color,
+        uri: r.profile?.avatar_url,
+      }))
+    setRideInAvatars(inItems)
+  }, [])
+
+  // Realtime: when anyone (including self) changes RSVP for this ride, refresh message-body avatars
+  useEffect(() => {
+    const rideId = room?.ride_id
+    if (!rideId) return
+    const channel = supabase
+      .channel(`chat-ride-rsvps:${rideId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'ride_rsvps',
+        filter: `ride_id=eq.${rideId}`,
+      }, () => refetchRideRsvps(rideId))
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [room?.ride_id, refetchRideRsvps])
 
   const markAsRead = useCallback(async () => {
     if (!roomId) return
@@ -157,7 +210,7 @@ export default function ChatScreen() {
     if (!text.trim()) return
     const trimmed = text.trim()
     await sendMessage(trimmed)
-    // When user taps "I'm In!", "Let's ride!", or "I'm Out" in a ride chat, update ride_rsvps so it reflects on the ride card
+    // When user taps "I'm In!", "Let's ride!", or "I'm Out" in a ride chat, update ride_rsvps so it reflects on the ride card and message-body avatars
     if (isRide && room?.ride_id && user?.id) {
       if (trimmed === "I'm in!" || trimmed === "Let's ride! 🔥") {
         await supabase.from('ride_rsvps').upsert(
@@ -170,6 +223,8 @@ export default function ChatScreen() {
           { onConflict: 'ride_id,user_id' }
         )
       }
+      // Refresh RSVP avatars in message body so they update immediately
+      refetchRideRsvps(room.ride_id)
     }
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
     inputRef.current?.blur()
@@ -311,7 +366,14 @@ export default function ChatScreen() {
               uri={room.club.avatar_url}
             />
           )}
-          <Text style={styles.headerTitle} numberOfLines={1}>{headerTitle}</Text>
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.headerTitle} numberOfLines={1}>{headerTitle}</Text>
+            {isRide && (
+              <Text style={styles.headerRiderCount} numberOfLines={1}>
+                {rideInAvatars.length} {rideInAvatars.length === 1 ? 'rider' : 'riders'} going
+              </Text>
+            )}
+          </View>
         </View>
         <View style={styles.headerRight}>
           {isOwner && (
@@ -360,6 +422,9 @@ export default function ChatScreen() {
             roomTitle={room?.title ?? headerTitle}
             roomExpiry={room?.expiry ?? null}
             rideRoute={rideRoute}
+            rideDetail={rideDetail}
+            rideInAvatars={rideInAvatars}
+            isRide={isRide}
             listRef={listRef}
             renderMessage={renderMessage}
             keyboardOpen={keyboardOpen}
@@ -409,6 +474,9 @@ type MessageListProps = {
   roomTitle?: string
   roomExpiry: string | null
   rideRoute: { polyline: string; distanceKm?: number; elevationGainM?: number; name?: string } | null
+  rideDetail: { time?: string; location?: string; date?: string } | null
+  rideInAvatars: ChatAvatarStackItem[]
+  isRide: boolean
   listRef: React.RefObject<FlatList | null>
   renderMessage: ({ item }: { item: Message }) => React.ReactElement
   keyboardOpen: boolean
@@ -418,7 +486,26 @@ type MessageListProps = {
   lastMarkAsReadRef?: React.MutableRefObject<number>
 }
 
-function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, listRef, renderMessage, keyboardOpen, isNearBottomRef, hasInitialScrolledRef, onMarkAsRead, lastMarkAsReadRef }: MessageListProps) {
+function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, rideDetail, rideInAvatars, isRide, listRef, renderMessage, keyboardOpen, isNearBottomRef, hasInitialScrolledRef, onMarkAsRead, lastMarkAsReadRef }: MessageListProps) {
+  const hasMeta = rideDetail?.date || rideDetail?.time || rideDetail?.location
+  const metaParts: string[] = []
+  if (rideDetail?.date) metaParts.push(rideDetail.date)
+  if (rideDetail?.time) metaParts.push(fmtTime(rideDetail.time))
+  if (rideDetail?.location) metaParts.push(rideDetail.location)
+  const rideBodyBlock = isRide && roomTitle ? (
+    <View style={styles.rideMessageBody}>
+      <Text style={styles.rideMessageBodyTitle} numberOfLines={2}>{roomTitle}</Text>
+      {hasMeta ? (
+        <Text style={styles.rideMessageBodyMetaText} numberOfLines={1}>{metaParts.join(' · ')}</Text>
+      ) : null}
+    </View>
+  ) : null
+  const rideRsvpBlock = isRide && rideInAvatars.length > 0 ? (
+    <View style={styles.rideMessageRsvps}>
+      <AvatarStack avatars={rideInAvatars} max={6} />
+    </View>
+  ) : null
+
   return (
     <FlatList
       ref={listRef}
@@ -473,6 +560,8 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, list
               <ChatExpiryText expiry={roomExpiry} />
             </View>
           ) : null}
+          {rideBodyBlock}
+          {rideRsvpBlock}
           {rideRoute && (
             <RouteMap
               polyline={rideRoute.polyline}
@@ -488,7 +577,7 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, list
       ListEmptyComponent={
         !loading ? (
           <View style={styles.emptyMessages}>
-            {roomTitle ? (
+            {!isRide && roomTitle ? (
               <Text style={styles.emptyMessagesTitle} numberOfLines={2}>{roomTitle}</Text>
             ) : null}
             <MessageCircle size={36} color={colors.slate300} />
@@ -587,8 +676,10 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 4 },
   headerInfo: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerTitleWrap: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: fontWeight.bold, color: colors.slate900 },
+  headerRiderCount: { fontSize: fontSize.sm, color: colors.slate500, marginTop: 2 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { flex: 1, fontSize: 16, fontWeight: fontWeight.bold, color: colors.slate900 },
 
   menuWrap: { position: 'relative' },
   menuBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
@@ -614,7 +705,7 @@ const styles = StyleSheet.create({
   },
   expiryNotice: {
     alignSelf: 'center',
-    marginBottom: 12,
+    marginBottom: 2,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.white,
@@ -626,6 +717,29 @@ const styles = StyleSheet.create({
   },
   expiryNoticeText: { fontSize: fontSize.xs, color: colors.slate400 },
   chatRouteMap: { marginHorizontal: spacing.lg, marginBottom: 12, borderRadius: 12 },
+  rideMessageBody: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    marginBottom: 4,
+  },
+  rideMessageRsvps: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  rideMessageBodyTitle: {
+    fontSize: 24,
+    fontWeight: fontWeight.bold,
+    color: colors.slate800,
+    textAlign: 'center',
+  },
+  rideMessageBodyMetaText: {
+    fontSize: fontSize.md,
+    color: colors.slate500,
+    textAlign: 'center',
+    marginTop: 6,
+  },
   emptyMessages: { alignItems: 'center', paddingVertical: 4, gap: 8 },
   emptyMessagesTitle: {
     fontSize: 24,
@@ -641,7 +755,7 @@ const styles = StyleSheet.create({
   msgRowMe: { flexDirection: 'row-reverse' },
   msgBubbleWrap: { maxWidth: '75%', gap: 3 },
   msgBubbleWrapMe: { alignItems: 'flex-end' },
-  msgSender: { fontSize: fontSize.xs, color: colors.slate400, paddingLeft: 4 },
+  msgSender: { fontSize: fontSize.sm, color: colors.slate500, paddingLeft: 4 },
   msgBubble: {
     paddingHorizontal: 14, paddingVertical: 10,
     borderRadius: 18,
@@ -658,7 +772,7 @@ const styles = StyleSheet.create({
   msgText: { fontSize: fontSize.base, lineHeight: 20 },
   msgTextMe: { color: colors.white },
   msgTextThem: { color: colors.slate800 },
-  msgTime: { fontSize: 10, color: colors.slate400, paddingHorizontal: 4 },
+  msgTime: { fontSize: 11, color: colors.slate400, paddingHorizontal: 4 },
 
   // Quick replies
   composer: {
@@ -671,7 +785,7 @@ const styles = StyleSheet.create({
   quickReply: {
     paddingHorizontal: 14, paddingVertical: 7,
     backgroundColor: colors.slate100, borderRadius: radius.full,
-    borderWidth: 1, borderColor: colors.slate200,
+    borderWidth: 1, borderColor: colors.white,
   },
   quickReplyText: { fontSize: fontSize.xs, color: colors.slate600 },
 

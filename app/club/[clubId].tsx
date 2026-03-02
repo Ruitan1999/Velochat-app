@@ -15,6 +15,10 @@ import { Avatar, Pill, Card, Button } from '../../src/components/ui'
 import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
 import { ChevronLeft, Shield, Users, X as XIcon, Bike, UserPlus, MoreVertical, Pencil, Trash2, Camera } from 'lucide-react-native'
 
+const CLUB_COLORS = [
+  '#3B82F6', '#7C3AED', '#059669', '#DC2626', '#D97706', '#0891B2',
+]
+
 export default function ClubScreen() {
   const { clubId } = useLocalSearchParams<{ clubId: string | string[] }>()
   const { user } = useAuth()
@@ -27,12 +31,37 @@ export default function ClubScreen() {
   const [showEditClub, setShowEditClub] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [emailMatchProfile, setEmailMatchProfile] = useState<Profile | null>(null)
+  const [emailMatchLoading, setEmailMatchLoading] = useState(false)
   const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState(CLUB_COLORS[0])
   const [editVisibility, setEditVisibility] = useState<'public' | 'private'>('private')
   const [editSaving, setEditSaving] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
 
   const normalizedClubId = Array.isArray(clubId) ? clubId[0] : clubId
+
+  // When search looks like an email, look up profile by exact email (so private accounts can be found)
+  useEffect(() => {
+    const q = search.trim()
+    if (!q || !q.includes('@')) {
+      setEmailMatchProfile(null)
+      return
+    }
+    let cancelled = false
+    setEmailMatchLoading(true)
+    supabase.rpc('get_profile_by_invite_email', { p_email: q })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        setEmailMatchLoading(false)
+        if (error || !data || !Array.isArray(data) || data.length === 0) {
+          setEmailMatchProfile(null)
+          return
+        }
+        setEmailMatchProfile(data[0] as Profile)
+      })
+    return () => { cancelled = true }
+  }, [search])
 
   const fetchClub = async () => {
     if (!normalizedClubId) return
@@ -91,14 +120,27 @@ export default function ClubScreen() {
     !isFriend(r.id),
   )
 
-  // For discover: by default, only public profiles; when searching, allow private matches
+  // For discover: only public profiles by default or by name search; private accounts only via exact email (RPC)
   const discoverCandidates = discoverBase.filter(r => {
     const q = search.toLowerCase()
+    const isPublic = ((r as any).visibility ?? 'public') === 'public'
     if (!q) {
-      return ((r as any).visibility ?? 'public') === 'public'
+      return isPublic
     }
-    return matchesSearch(r)
+    // Name search: only show public profiles. Private accounts are not findable by name, only by exact email.
+    return isPublic && matchesSearch(r)
   })
+
+  // Include profile found by exact email (so private accounts show when inviter searches their email)
+  const discoverList = [...discoverCandidates]
+  if (
+    emailMatchProfile &&
+    !memberIds.includes(emailMatchProfile.id) &&
+    emailMatchProfile.id !== user?.id &&
+    !discoverCandidates.some(r => r.id === emailMatchProfile.id)
+  ) {
+    discoverList.push(emailMatchProfile)
+  }
 
   const handleRemoveMember = async (userId: string) => {
     Alert.alert('Remove Member', 'Remove this rider from the club?', [
@@ -124,6 +166,7 @@ export default function ClubScreen() {
   const openEditClub = () => {
     setMenuOpen(false)
     setEditName(club.name)
+    setEditColor(club.color ?? CLUB_COLORS[0])
     setEditVisibility((club.visibility as 'public' | 'private') ?? 'private')
     setShowEditClub(true)
   }
@@ -140,6 +183,7 @@ export default function ClubScreen() {
       const { error } = await supabase.from('clubs').update({
         name: editName.trim(),
         avatar_initials: initials,
+        color: editColor,
         visibility: editVisibility,
       }).eq('id', normalizedClubId)
       if (error) {
@@ -366,7 +410,7 @@ export default function ClubScreen() {
                 disabled={avatarUploading}
                 style={styles.editAvatarWrap}
               >
-                <Avatar initials={club.avatar_initials} color={club.color} size="xl" uri={club.avatar_url} />
+                <Avatar initials={club.avatar_initials} color={editColor} size="xl" uri={club.avatar_url} />
                 {avatarUploading ? (
                   <View style={styles.editAvatarOverlay}>
                     <ActivityIndicator size="small" color={colors.white} />
@@ -382,12 +426,24 @@ export default function ClubScreen() {
 
             <Text style={styles.editLabel}>Club Name</Text>
             <TextInput
-              style={styles.searchInput}
+              style={styles.editInput}
               value={editName}
               onChangeText={setEditName}
               placeholder="Club name"
               placeholderTextColor={colors.slate400}
             />
+
+            <Text style={styles.editLabel}>Colour</Text>
+            <View style={styles.colorRow}>
+              {CLUB_COLORS.map(c => (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.colorSwatch, { backgroundColor: c }, editColor === c && styles.colorSwatchActive]}
+                  onPress={() => setEditColor(c)}
+                  activeOpacity={0.8}
+                />
+              ))}
+            </View>
 
             <Text style={styles.editLabel}>Privacy</Text>
             <View style={styles.visibilityRow}>
@@ -431,14 +487,26 @@ export default function ClubScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.searchWrap}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search riders..."
-              placeholderTextColor={colors.slate400}
-              value={search}
-              onChangeText={setSearch}
-              autoCapitalize="none"
-            />
+            <View style={styles.searchInputRow}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by name or exact email..."
+                placeholderTextColor={colors.slate400}
+                value={search}
+                onChangeText={setSearch}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+              {search.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearch('')}
+                  style={styles.searchClearBtn}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <XIcon size={18} color={colors.slate500} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
           <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
             {/* Friends section */}
@@ -468,10 +536,15 @@ export default function ClubScreen() {
             {/* Discover section */}
             <View style={{ gap: 8 }}>
               <Text style={styles.sectionHeading}>Discover riders</Text>
-              {discoverCandidates.length === 0 && (
-                <Text style={styles.emptyText}>No riders to add.</Text>
+              {emailMatchLoading && (
+                <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={colors.slate400} />
+                </View>
               )}
-              {discoverCandidates.map(rider => (
+              {!emailMatchLoading && discoverList.length === 0 && (
+                <Text style={styles.emptyText}>No riders to add. Try name or exact email.</Text>
+              )}
+              {discoverList.map(rider => (
                 <Card key={rider.id} style={styles.riderRow}>
                   <Avatar
                     initials={rider.avatar_initials}
@@ -564,7 +637,9 @@ const styles = StyleSheet.create({
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.slate100, alignItems: 'center', justifyContent: 'center' },
   closeBtnText: { fontSize: fontSize.sm, color: colors.slate500 },
   searchWrap: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.slate100 },
-  searchInput: { backgroundColor: colors.slate100, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: 11, fontSize: fontSize.base, color: colors.slate800 },
+  searchInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.slate100, borderRadius: radius.lg, paddingRight: 8 },
+  searchInput: { flex: 1, paddingHorizontal: spacing.lg, paddingVertical: 11, fontSize: fontSize.base, color: colors.slate800 },
+  searchClearBtn: { padding: 6, alignItems: 'center', justifyContent: 'center' },
 
   riderRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: 12 },
   riderInfo: { flex: 1 },
@@ -588,6 +663,19 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: colors.slate500,
     textTransform: 'uppercase', letterSpacing: 1, marginTop: 4,
   },
+  editInput: {
+    backgroundColor: colors.slate50,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
+    fontSize: fontSize.base,
+    color: colors.slate800,
+  },
+  colorRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  colorSwatch: { width: 32, height: 32, borderRadius: 16 },
+  colorSwatchActive: { borderWidth: 3, borderColor: colors.slate400, transform: [{ scale: 1.15 }] },
   visibilityRow: { marginTop: spacing.md, gap: 10 },
   visibilityPill: {
     borderRadius: radius.lg,

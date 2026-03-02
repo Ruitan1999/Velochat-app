@@ -5,23 +5,21 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import * as ImagePicker from 'expo-image-picker'
-const { decode } = require('base64-arraybuffer')
-import * as FileSystem from 'expo-file-system/legacy'
-import { useAuth } from '../src/lib/AuthContext'
-import { supabase } from '../src/lib/supabase'
-import { Avatar, Button } from '../src/components/ui'
-import { colors, spacing, fontSize, fontWeight, radius } from '../src/lib/theme'
+import { useAuth } from '../../src/lib/AuthContext'
+import { supabase } from '../../src/lib/supabase'
+import { Button } from '../../src/components/ui'
+import { colors, spacing, fontSize, fontWeight, radius } from '../../src/lib/theme'
+import { uploadAvatarFromUri } from '../../src/lib/avatarUpload'
+import { AvatarPicker } from '../../src/components/AvatarPicker'
 import {
-  ChevronLeft, User, Mail, Shield,
-  LogOut, ChevronRight, Camera,
+  User, Mail, Shield, Users,
+  LogOut, ChevronRight,
 } from 'lucide-react-native'
 
 export default function ProfileScreen() {
   const { user, profile, updateProfile, signOut } = useAuth()
 
   const [name, setName] = useState(profile?.name ?? '')
-  const [bio, setBio] = useState(profile?.bio ?? '')
   const [saving, setSaving] = useState(false)
 
   const [showEmailChange, setShowEmailChange] = useState(false)
@@ -34,33 +32,11 @@ export default function ProfileScreen() {
     (profile as any)?.visibility ?? 'public'
   )
 
-  const handlePickAvatar = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    })
-    if (result.canceled || !result.assets?.[0]?.uri) return
-
+  const handleAvatarPicked = async (localUri: string) => {
+    if (!user?.id) return
     setAvatarUploading(true)
     try {
-      const uri = result.assets[0].uri
-      const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg'
-      const filePath = `${user!.id}/avatar.${ext}`
-
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' })
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, decode(base64), {
-          contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-          upsert: true,
-        })
-      if (uploadError) throw uploadError
-
-      const { data: publicUrl } = supabase.storage.from('avatars').getPublicUrl(filePath)
-      const avatarUrl = `${publicUrl.publicUrl}?t=${Date.now()}`
+      const avatarUrl = await uploadAvatarFromUri({ userId: user.id, localUri })
       await updateProfile({ avatar_url: avatarUrl })
     } catch (err: any) {
       Alert.alert('Upload failed', err?.message ?? 'Could not upload avatar')
@@ -79,7 +55,6 @@ export default function ProfileScreen() {
       const initials = name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
       await updateProfile({
         name: name.trim(),
-        bio: bio.trim() || undefined,
         avatar_initials: initials,
         visibility: accountVisibility,
       })
@@ -126,12 +101,6 @@ export default function ProfileScreen() {
   if (!profile) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <ChevronLeft size={28} color={colors.slate400} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Profile</Text>
-        </View>
         <View style={styles.spinnerWrap}>
           <ActivityIndicator size="large" color={colors.blue500} />
         </View>
@@ -141,13 +110,6 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <ChevronLeft size={28} color={colors.slate400} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-      </View>
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -160,21 +122,14 @@ export default function ProfileScreen() {
         >
           {/* Avatar */}
           <View style={styles.avatarSection}>
-            <TouchableOpacity style={styles.avatarWrap} onPress={handlePickAvatar} activeOpacity={0.8}>
-              <Avatar
-                initials={profile?.avatar_initials ?? '?'}
-                color={profile?.avatar_color}
-                size="xl"
-                uri={profile?.avatar_url}
-              />
-              <View style={styles.avatarCameraBadge}>
-                {avatarUploading ? (
-                  <ActivityIndicator size="small" color={colors.white} />
-                ) : (
-                  <Camera size={14} color={colors.white} />
-                )}
-              </View>
-            </TouchableOpacity>
+            <AvatarPicker
+              initials={profile?.avatar_initials ?? '?'}
+              color={profile?.avatar_color}
+              size="xl"
+              uri={profile?.avatar_url}
+              uploading={avatarUploading}
+              onPickedUri={handleAvatarPicked}
+            />
             <Text style={styles.avatarName}>{profile?.name}</Text>
           </View>
 
@@ -193,21 +148,6 @@ export default function ProfileScreen() {
               placeholderTextColor={colors.slate400}
             />
 
-            <View style={[styles.fieldRow, { marginTop: 16 }]}>
-              <User size={16} color={colors.slate400} />
-              <Text style={styles.fieldLabel}>Bio</Text>
-            </View>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={bio}
-              onChangeText={setBio}
-              placeholder="Tell us about yourself"
-              placeholderTextColor={colors.slate400}
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-            />
-
             <Button onPress={handleSaveProfile} loading={saving} style={{ marginTop: 16 }}>
               Save Profile
             </Button>
@@ -222,7 +162,7 @@ export default function ProfileScreen() {
                 <Shield size={16} color={colors.slate400} />
                 <View>
                   <Text style={styles.menuItemLabel}>Private account</Text>
-                 
+
                 </View>
               </View>
               <Switch
@@ -230,11 +170,10 @@ export default function ProfileScreen() {
                 onValueChange={async val => {
                   const next = val ? 'private' : 'public'
                   setAccountVisibility(next)
-                  // persist immediately so toggle actually saves
                   try {
                     await updateProfile({ visibility: next as any })
                   } catch {
-                    // ignore – AuthContext already surfaces most errors; UI stays in last state
+                    // ignore
                   }
                 }}
                 trackColor={{ false: colors.slate200, true: colors.blue200 }}
@@ -300,13 +239,6 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.slate50 },
   spinnerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: spacing.lg, paddingVertical: 12,
-    backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.slate200,
-  },
-  backBtn: { padding: 4 },
-  headerTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.slate900 },
   scroll: { flex: 1 },
   content: { padding: spacing.lg, gap: 8 },
 
@@ -337,7 +269,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: 11,
     fontSize: fontSize.base, color: colors.slate800,
   },
-  textArea: { minHeight: 70, paddingTop: 11 },
 
   menuItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

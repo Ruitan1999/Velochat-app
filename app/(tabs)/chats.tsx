@@ -69,18 +69,6 @@ export default function ChatsScreen() {
             <Text style={{ color: colors.blue500 }}>Velo</Text>Chat
           </Text>
         </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity onPress={() => router.push('/profile')}>
-            {profile && (
-              <Avatar
-                initials={profile.avatar_initials}
-                color={profile.avatar_color}
-                uri={profile.avatar_url}
-                size="md"
-              />
-            )}
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Feed */}

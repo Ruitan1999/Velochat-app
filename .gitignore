@@ -6,6 +6,8 @@ expo-env.d.ts
 # @end expo-cli
 node_modules
 node_modules
+dist
+.expo/web/cache
 
 # Google Play service account key (do not commit)
 google-play-service-account.json

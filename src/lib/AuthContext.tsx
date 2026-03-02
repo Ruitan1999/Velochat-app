@@ -11,9 +11,10 @@ type AuthContextType = {
   loading: boolean
   requestLoginOtp: (email: string) => Promise<{ error: Error | null }>
   requestSignUpOtp: (email: string, name: string) => Promise<{ error: Error | null }>
-  verifyOtp: (email: string, token: string) => Promise<{ error: Error | null }>
+  verifyOtp: (email: string, token: string) => Promise<{ error: Error | null; userId?: string }>
   signOut: () => Promise<void>
   updateProfile: (updates: Partial<Profile>) => Promise<void>
+  refreshProfile: (userId?: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType)
@@ -34,7 +35,6 @@ const MOCK_PROFILE: Profile = {
   name: 'Test Rider',
   avatar_initials: 'TR',
   avatar_color: '#3B82F6',
-  bio: 'Mock user for testing',
   created_at: new Date().toISOString(),
 }
 
@@ -117,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token: token.trim(),
       type: 'email',
     })
-    if (error) return { error }
+    if (error) return { error, userId: undefined }
     // Ensure profile has name from sign-up metadata (trigger may not set it)
     if (data?.user) {
       const meta = data.user.user_metadata
@@ -128,7 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.from('profiles').update({ name, avatar_initials: initials, avatar_color: color }).eq('id', data.user.id)
       }
     }
-    return { error: null }
+    return { error: null, userId: data?.user?.id }
   }
 
   async function signOut() {
@@ -148,8 +148,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data) setProfile(data)
   }
 
+  async function refreshProfile(userId?: string) {
+    const id = userId ?? user?.id
+    if (id) await fetchProfile(id)
+  }
+
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, requestLoginOtp, requestSignUpOtp, verifyOtp, signOut, updateProfile }}>
+    <AuthContext.Provider value={{ session, user, profile, loading, requestLoginOtp, requestSignUpOtp, verifyOtp, signOut, updateProfile, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

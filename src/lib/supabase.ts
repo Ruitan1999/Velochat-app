@@ -24,7 +24,6 @@ export type Profile = {
   avatar_initials: string
   avatar_color: string
   avatar_url?: string
-  bio?: string
   fcm_token?: string
   visibility?: 'public' | 'private'
   created_at: string

@@ -9,6 +9,9 @@ import { useAuth } from '../../src/lib/AuthContext'
 import { colors, spacing, radius, fontSize, fontWeight } from '../../src/lib/theme'
 import { Button } from '../../src/components/ui'
 import { ChevronLeft } from 'lucide-react-native'
+import { getSignupAvatarLocalUri, clearSignupDraft } from '../../src/lib/signupDraft'
+import { uploadAvatarFromUri } from '../../src/lib/avatarUpload'
+import { supabase } from '../../src/lib/supabase'
 
 const CODE_LENGTH = 8
 const RESEND_COOLDOWN_SEC = 60
@@ -18,12 +21,13 @@ export default function OtpScreen() {
   const email = params.email ?? ''
   const flow = params.flow ?? 'login'
   const name = params.name ?? ''
-  const { verifyOtp, requestLoginOtp, requestSignUpOtp } = useAuth()
+  const { verifyOtp, requestLoginOtp, requestSignUpOtp, refreshProfile } = useAuth()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SEC)
   const [resendLoading, setResendLoading] = useState(false)
   const inputRef = useRef<TextInput>(null)
+  const attemptedCodeRef = useRef<string | null>(null)
 
   // If we landed here without an email (e.g. app reload), go straight to login
   useEffect(() => {
@@ -42,6 +46,7 @@ export default function OtpScreen() {
   const handleChange = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, CODE_LENGTH)
     setCode(digits)
+    if (digits.length < CODE_LENGTH) attemptedCodeRef.current = null
   }
 
   const handleVerify = async () => {
@@ -49,15 +54,47 @@ export default function OtpScreen() {
       Alert.alert('Invalid code', `Please enter the ${CODE_LENGTH}-digit code from your email.`)
       return
     }
+    attemptedCodeRef.current = code
     setLoading(true)
-    const { error } = await verifyOtp(email, code)
+    const { error, userId } = await verifyOtp(email, code)
     setLoading(false)
     if (error) {
+      attemptedCodeRef.current = null
       Alert.alert('Verification failed', error.message)
       return
     }
-    router.replace('/(tabs)/chats')
+
+    // Navigate first so Root Layout is fully in control, then do signup avatar in background.
+    const navDelayMs = 150
+    setTimeout(() => {
+      router.replace('/(tabs)/chats')
+    }, navDelayMs)
+
+    if (flow === 'signup' && userId) {
+      const localUri = getSignupAvatarLocalUri()
+      clearSignupDraft()
+      if (localUri) {
+        // Run after navigation so we don't trigger "navigate before mount" from this stack.
+        setTimeout(async () => {
+          try {
+            const avatarUrl = await uploadAvatarFromUri({ userId, localUri })
+            await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', userId)
+            await refreshProfile(userId)
+          } catch {
+            // Optional — user can set avatar later in Profile.
+          }
+        }, navDelayMs + 50)
+      }
+    }
   }
+
+  // Auto-verify as soon as user enters 8 digits
+  useEffect(() => {
+    if (code.length === CODE_LENGTH && code !== attemptedCodeRef.current && !loading) {
+      attemptedCodeRef.current = code
+      handleVerify()
+    }
+  }, [code])
 
   const handleBackToLogin = () => {
     router.replace('/(auth)/login')

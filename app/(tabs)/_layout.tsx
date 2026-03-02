@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Tabs } from 'expo-router'
+import { Tabs, useRootNavigationState } from 'expo-router'
 import { View, Text, StyleSheet } from 'react-native'
-import { MessageCircle, Shield, Users } from 'lucide-react-native'
+import { MessageCircle, Shield, User } from 'lucide-react-native'
 import { colors, fontWeight, fontSize } from '../../src/lib/theme'
 import { useAuth } from '../../src/lib/AuthContext'
 import { supabase } from '../../src/lib/supabase'
@@ -33,7 +33,9 @@ function TabIcon({
       <Text
         style={[styles.tabLabel, { color: focused ? colors.blue500 : colors.slate400 }]}
         numberOfLines={1}
-        ellipsizeMode="clip"
+        ellipsizeMode="tail"
+        adjustsFontSizeToFit
+        minimumFontScale={0.75}
       >
         {label}
       </Text>
@@ -49,8 +51,23 @@ export default function TabsLayout() {
     return subscribeTabUnread(() => setHasUnreadChats(getTabUnread()))
   }, [])
 
+  const rootState = useRootNavigationState()
+  const isNavReady = Boolean(rootState?.key)
+  const [canShowTabs, setCanShowTabs] = useState(false)
+
+  // Defer mounting Tabs by one tick so router store state (e.g. stale) is defined (avoids "stale of undefined")
   useEffect(() => {
-    if (!user) return
+    if (!user || !isNavReady) {
+      setCanShowTabs(false)
+      return
+    }
+    const t = setTimeout(() => setCanShowTabs(true), 0)
+    return () => clearTimeout(t)
+  }, [user, isNavReady])
+
+  // Only run unread subscription after navigator is ready (avoids "stale of undefined")
+  useEffect(() => {
+    if (!user || !isNavReady) return
     let cancelled = false
     const run = async () => {
       const { data, error } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
@@ -77,10 +94,10 @@ export default function TabsLayout() {
       cancelled = true
       channel?.unsubscribe()
     }
-  }, [user])
+  }, [user, isNavReady])
 
-  // Avoid mounting Tabs before auth has resolved (prevents "stale of undefined" in navigator refs)
-  if (!user) {
+  // Avoid mounting Tabs until one tick after nav is ready (router store state must be defined)
+  if (!user || !isNavReady || !canShowTabs) {
     return null
   }
 
@@ -119,10 +136,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="riders"
+        name="profile"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon icon={Users} label="Riders" focused={focused} />
+            <TabIcon icon={User} label="Me" focused={focused} />
           ),
         }}
       />
@@ -141,6 +158,7 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 10,
     fontWeight: fontWeight.semibold,
+    maxWidth: '100%',
   },
   tabDot: {
     position: 'absolute',

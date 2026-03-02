@@ -6,9 +6,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useAuth } from '../lib/AuthContext'
-import { colors, spacing, radius, fontSize, fontWeight } from '../lib/theme'
+import { colors, spacing, radius, fontSize, fontWeight, getAvatarColor } from '../lib/theme'
 import { Button } from '../components/ui'
 import { ChevronLeft } from 'lucide-react-native'
+import { AvatarPicker } from '../components/AvatarPicker'
+import { getSignupAvatarLocalUri, setSignupAvatarLocalUri } from '../lib/signupDraft'
 
 // ─── Login Screen ─────────────────────────────────────────────
 
@@ -96,11 +98,22 @@ export function SignUpScreen() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState(params.email ?? '')
   const [loading, setLoading] = useState(false)
+  const [avatarLocalUri, setAvatarLocalUriState] = useState<string | null>(() => getSignupAvatarLocalUri())
 
   // Pre-fill email when coming from login (user tried to sign in but doesn't have an account)
   useEffect(() => {
     if (params.email) setEmail(params.email)
   }, [params.email])
+
+  const avatarInitials = name.trim()
+    ? name.trim().split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+    : '??'
+  const avatarColor = getAvatarColor(avatarInitials)
+
+  const setAvatarLocalUri = (uri: string | null) => {
+    setAvatarLocalUriState(uri)
+    setSignupAvatarLocalUri(uri)
+  }
 
   const handleSendCode = async () => {
     if (!name.trim() || !email.trim()) {
@@ -140,6 +153,17 @@ export function SignUpScreen() {
 
           <Text style={styles.heading}>Create account</Text>
         <Text style={styles.subheading}>Name and email, then we’ll send you a code</Text>
+
+        <View style={styles.avatarSection}>
+          <AvatarPicker
+            initials={avatarInitials}
+            color={avatarColor}
+            uri={avatarLocalUri}
+            size="xl"
+            onPickedUri={async (uri) => setAvatarLocalUri(uri)}
+          />
+          <Text style={styles.avatarHint}>Avatar (optional)</Text>
+        </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Full name</Text>
@@ -211,6 +235,9 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm, color: colors.slate400,
     marginBottom: 28,
   },
+
+  avatarSection: { alignItems: 'center', marginBottom: 18 },
+  avatarHint: { marginTop: 10, fontSize: fontSize.sm, color: colors.slate400 },
 
   fieldGroup: { marginBottom: 16 },
   label: {
