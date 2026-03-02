@@ -17,10 +17,11 @@ const CODE_LENGTH = 8
 const RESEND_COOLDOWN_SEC = 60
 
 export default function OtpScreen() {
-  const params = useLocalSearchParams<{ email: string; flow?: string; name?: string }>()
+  const params = useLocalSearchParams<{ email: string; flow?: string; name?: string; newEmail?: string }>()
   const email = params.email ?? ''
   const flow = params.flow ?? 'login'
   const name = params.name ?? ''
+  const newEmail = params.newEmail ?? ''
   const { verifyOtp, requestLoginOtp, requestSignUpOtp, refreshProfile } = useAuth()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
@@ -61,6 +62,22 @@ export default function OtpScreen() {
     if (error) {
       attemptedCodeRef.current = null
       Alert.alert('Verification failed', error.message)
+      return
+    }
+
+    if (flow === 'email-change') {
+      const targetEmail = (newEmail as string)?.trim().toLowerCase()
+      if (!targetEmail) {
+        Alert.alert('Error', 'Missing new email to update.')
+        return
+      }
+      const { error: updateError } = await supabase.auth.updateUser({ email: targetEmail })
+      if (updateError) {
+        Alert.alert('Error', updateError.message ?? 'Failed to update email')
+        return
+      }
+      Alert.alert('Email updated', 'Your email has been updated. If required, check your new inbox to confirm the change.')
+      router.replace('/(tabs)/profile')
       return
     }
 
@@ -138,10 +155,25 @@ export default function OtpScreen() {
           <Text style={{ color: colors.slate900 }}>Chat</Text>
         </Text>
 
-        <Text style={styles.heading}>Check your email</Text>
+        <Text style={styles.heading}>
+          {flow === 'email-change' ? 'Verify email change' : 'Check your email'}
+        </Text>
         <Text style={styles.subheading}>
-          We sent an 8-digit code to{' '}
-          <Text style={styles.email}>{email}</Text>
+          {flow === 'email-change'
+            ? (
+              <>
+                Enter the 8-digit code we sent to your current email{' '}
+                <Text style={styles.email}>{email}</Text>
+                . After this, we&apos;ll update your login email.
+              </>
+            )
+            : (
+              <>
+                We sent an 8-digit code to{' '}
+                <Text style={styles.email}>{email}</Text>
+              </>
+            )
+          }
         </Text>
 
         <TextInput
@@ -171,9 +203,11 @@ export default function OtpScreen() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity onPress={handleBackToLogin} style={styles.resendLink}>
-          <Text style={styles.resendText}>Wrong email? Go back and try again</Text>
-        </TouchableOpacity>
+        {flow !== 'email-change' && (
+          <TouchableOpacity onPress={handleBackToLogin} style={styles.resendLink}>
+            <Text style={styles.resendText}>Wrong email? Go back and try again</Text>
+          </TouchableOpacity>
+        )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

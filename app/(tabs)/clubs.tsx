@@ -222,6 +222,12 @@ function CreateClubModal({ visible, onClose, onCreate }: {
   const initials = getInitials(name) || '?'
 
   const handlePickAvatar = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Please allow photo library access to add a club photo.')
+      return
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,

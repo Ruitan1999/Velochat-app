@@ -6,7 +6,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { useAuth } from '../../src/lib/AuthContext'
-import { supabase } from '../../src/lib/supabase'
 import { Button } from '../../src/components/ui'
 import { colors, spacing, fontSize, fontWeight, radius } from '../../src/lib/theme'
 import { uploadAvatarFromUri } from '../../src/lib/avatarUpload'
@@ -17,7 +16,7 @@ import {
 } from 'lucide-react-native'
 
 export default function ProfileScreen() {
-  const { user, profile, updateProfile, signOut } = useAuth()
+  const { user, profile, updateProfile, signOut, requestLoginOtp } = useAuth()
 
   const [name, setName] = useState(profile?.name ?? '')
   const [saving, setSaving] = useState(false)
@@ -67,15 +66,27 @@ export default function ProfileScreen() {
   }
 
   const handleChangeEmail = async () => {
-    if (!newEmail.trim()) return
+    const trimmed = newEmail.trim().toLowerCase()
+    if (!trimmed) return
+    if (!user?.email) {
+      Alert.alert('Error', 'Missing current email for verification.')
+      return
+    }
+    if (trimmed === user.email.toLowerCase()) {
+      Alert.alert('Error', 'That is already your current email.')
+      return
+    }
     setEmailLoading(true)
     try {
-      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() })
+      // Send OTP to the current (old) email so we verify the existing login email
+      const { error } = await requestLoginOtp(user.email)
       if (error) {
         Alert.alert('Error', error.message)
       } else {
-        Alert.alert('Check your email', 'A confirmation link has been sent to your new email address.')
         setShowEmailChange(false)
+        const encodedNewEmail = encodeURIComponent(trimmed)
+        // Verify code sent to the current email, then update to the new email inside the OTP screen
+        router.push(`/(auth)/otp?email=${encodeURIComponent(user.email)}&flow=email-change&newEmail=${encodedNewEmail}`)
         setNewEmail('')
       }
     } catch (err: any) {
