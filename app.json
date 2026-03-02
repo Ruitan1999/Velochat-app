@@ -22,7 +22,7 @@
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "softwareKeyboardLayoutMode": "adjustResize",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f172a"
@@ -53,7 +53,8 @@
         {
           "mode": "development"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "scheme": "velochat",
     "experiments": {

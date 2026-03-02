@@ -8,6 +8,7 @@ node_modules
 node_modules
 dist
 .expo/web/cache
+.expo/
 
 # Google Play service account key (do not commit)
 google-play-service-account.json
