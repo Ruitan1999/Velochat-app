@@ -23,7 +23,7 @@ export function useRides() {
     const clubIds = (memberships ?? []).map((m: { club_id: string }) => m.club_id)
 
     // Fetch rides for those clubs or organized by user
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('rides')
       .select(`
         *,
@@ -32,14 +32,31 @@ export function useRides() {
         chat_rooms(*)
       `)
       .or(`organizer_id.eq.${user.id},club_id.in.(${clubIds.join(',')})`)
-      .gt('chat_expiry', new Date().toISOString())
       .order('created_at', { ascending: false })
+
+    if (error) {
+      console.warn('Failed to load rides:', error.message)
+    }
+
+    const now = Date.now()
 
     const filtered = (data ?? []).filter((r: any) => {
       const inClub = r.club_id && clubIds.includes(r.club_id)
       const isOrganizer = r.organizer_id === user.id
       const invitedByRsvp = (r.rsvps ?? []).some((rv: any) => rv.user_id === user.id)
-      return isOrganizer || inClub || invitedByRsvp
+      if (!(isOrganizer || inClub || invitedByRsvp)) return false
+
+      // Keep rides visible until 24h after the scheduled ride datetime
+      try {
+        if (!r.date || !r.time) return true
+        const rideDateTime = new Date(`${r.date}T${r.time}`)
+        if (Number.isNaN(rideDateTime.getTime())) return true
+        const hideAfter = rideDateTime.getTime() + 24 * 60 * 60 * 1000
+        return now < hideAfter
+      } catch {
+        // If anything goes wrong parsing dates, fail open and keep the ride visible
+        return true
+      }
     })
 
     // Fetch unread counts per room for current user (messages from others after last_read_at)

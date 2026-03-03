@@ -40,7 +40,7 @@ const QUICK_REPLIES_GENERAL = [
 export default function ChatScreen() {
   const { roomId: roomIdParam } = useLocalSearchParams<{ roomId: string | string[] }>()
   const roomId = typeof roomIdParam === 'string' ? roomIdParam : roomIdParam?.[0]
-  const { user, profile } = useAuth()
+  const { user, profile, loading: authLoading } = useAuth()
   const { messages, loading, sendMessage, sendImage } = useMessages(roomId ?? '')
   const [room, setRoom] = useState<ChatRoomWithClub | null>(null)
   const [headerTitle, setHeaderTitle] = useState('...')
@@ -94,11 +94,13 @@ export default function ChatScreen() {
       .eq('id', roomId)
       .maybeSingle()
 
-    if (error) {
-      console.error('Failed to load room:', error.message)
-      return
-    }
-    if (!data) {
+    if (error || !data) {
+      console.error('Failed to load room:', error?.message ?? 'Room not found')
+      Alert.alert(
+        'Ride no longer available',
+        'This ride or chat room is no longer available.',
+        [{ text: 'OK', onPress: () => router.back() }],
+      )
       return
     }
 
@@ -322,8 +324,14 @@ export default function ChatScreen() {
     )
   }
 
-  // Always render message list when we have roomId so realtime messages work even if room meta is still loading
-  if (!roomId) return null
+  // Block entry while auth state is still resolving, or if we have no room id
+  if (authLoading || !roomId) {
+    return (
+      <SafeAreaView style={styles.spinnerWrap} edges={['top']}>
+        <ActivityIndicator size="large" color={colors.blue500} />
+      </SafeAreaView>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

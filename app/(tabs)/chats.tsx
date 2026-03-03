@@ -15,6 +15,8 @@ import { supabase, Ride, ChatRoom } from '../../src/lib/supabase'
 import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
 import { fmtTime } from '../../src/lib/utils'
 import { Bike, Calendar, Clock, Zap, MapPin, Check, X, MessageCircle, ChevronRight, Plus, Hash, MoreVertical, Pencil, Trash2 } from 'lucide-react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { registerForPushNotifications, saveFcmToken } from '../../src/lib/notifications'
 
 export default function ChatsScreen() {
   const { user, profile } = useAuth()
@@ -23,6 +25,30 @@ export default function ChatsScreen() {
   const [sub, setSub] = useState<'rides' | 'general'>('rides')
   const [refreshing, setRefreshing] = useState(false)
   const scrollRef = React.useRef<ScrollView | null>(null)
+
+  // Trigger native push permission prompt once after install, after home screen mounts
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    const run = async () => {
+      try {
+        const key = 'velochat_push_permission_requested_v1'
+        const already = await AsyncStorage.getItem(key)
+        if (already === 'yes' || cancelled) return
+        const token = await registerForPushNotifications()
+        await AsyncStorage.setItem(key, 'yes')
+        if (token && !cancelled) {
+          await saveFcmToken(user.id, token)
+        }
+      } catch (e) {
+        console.warn('Push registration failed:', e)
+      }
+    }
+    run()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
 
   // Whenever the Chats tab/screen gains focus (including after returning from a chat room),
   // refresh rides + rooms and the tab bar unread dot.
@@ -83,8 +109,14 @@ export default function ChatsScreen() {
           ? <View style={[styles.spinnerWrap, { minHeight: 280 }]}><ActivityIndicator size="large" color={colors.blue500} /></View>
           : rides.length === 0
             ? <EmptyState icon={<Bike size={36} color={colors.slate400} />} text="No rides posted yet" />
-            : rides.map(ride => <RideCard key={ride.id} ride={ride} onRideDeleted={refetchRides} />)
-        }
+            : rides.map(ride => (
+              <RideCard
+                key={ride.id}
+                ride={ride}
+                onRideDeleted={refetchRides}
+                disableChatNavigation={initialLoading}
+              />
+            ))}
         {!initialLoading && <View style={{ height: 24 }} />}
       </ScrollView>
 
@@ -106,7 +138,7 @@ export default function ChatsScreen() {
 
 // ─── Ride Card ────────────────────────────────────────────────
 
-export function RideCard({ ride, onRideDeleted }: { ride: Ride; onRideDeleted?: () => void }) {
+export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride: Ride; onRideDeleted?: () => void; disableChatNavigation?: boolean }) {
   const { user, profile } = useAuth()
   const [localRsvps, setLocalRsvps] = useState(ride.rsvps ?? [])
   const [openingChat, setOpeningChat] = useState(false)
@@ -171,6 +203,10 @@ export function RideCard({ ride, onRideDeleted }: { ride: Ride; onRideDeleted?: 
   }, [ride.id])
 
   const handleOpenChat = async () => {
+    if (disableChatNavigation) {
+      Alert.alert('Loading', 'Please wait until the app has finished loading before opening ride chats.')
+      return
+    }
     if (openingChat) return
     setOpeningChat(true)
     try {
@@ -181,6 +217,18 @@ export function RideCard({ ride, onRideDeleted }: { ride: Ride; onRideDeleted?: 
   }
 
   const _openChat = async () => {
+    // Ensure the ride still exists before navigating to its chat room
+    const { data: latestRide } = await supabase
+      .from('rides')
+      .select('id, chat_expiry')
+      .eq('id', ride.id)
+      .maybeSingle()
+
+    if (!latestRide) {
+      Alert.alert('Ride no longer available', 'This ride has been removed.')
+      return
+    }
+
     if (ride.chat_room) {
       router.push(`/chat/${ride.chat_room.id}`)
       return
@@ -214,7 +262,7 @@ export function RideCard({ ride, onRideDeleted }: { ride: Ride; onRideDeleted?: 
             ride_id: ride.id,
             club_id: ride.club_id ?? null,
             created_by: user.id,
-            expiry: ride.chat_expiry,
+            expiry: latestRide.chat_expiry,
           })
           .select()
           .single()

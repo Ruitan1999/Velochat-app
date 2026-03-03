@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar'
 import { View, ActivityIndicator } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import React from 'react'
 import { useFonts } from 'expo-font'
 import {
   Inter_400Regular,
@@ -95,7 +96,15 @@ export default function RootLayout() {
     'Inter-ExtraBold': Inter_800ExtraBold,
   })
 
-  if (!fontsLoaded) {
+  const [fontTimeoutDone, setFontTimeoutDone] = React.useState(false)
+
+  useEffect(() => {
+    if (fontsLoaded) return
+    const id = setTimeout(() => setFontTimeoutDone(true), 6000)
+    return () => clearTimeout(id)
+  }, [fontsLoaded])
+
+  if (!fontsLoaded && !fontTimeoutDone) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.slate50 }}>
         <ActivityIndicator color={colors.blue500} size="large" />

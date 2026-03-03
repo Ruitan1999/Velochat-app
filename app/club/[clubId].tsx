@@ -22,7 +22,7 @@ const CLUB_COLORS = [
 export default function ClubScreen() {
   const { clubId } = useLocalSearchParams<{ clubId: string | string[] }>()
   const { user } = useAuth()
-  const { rides, refetch: refetchRides } = useRides()
+  const { rides, loading: ridesLoading, refetch: refetchRides } = useRides()
   const { refetch: refetchClubs } = useClubs()
   const { riders, isFriend } = useRiders()
   const [club, setClub] = useState<Club & { members?: { user_id: string; role: string; profile: Profile }[] } | null>(null)
@@ -96,6 +96,7 @@ export default function ClubScreen() {
   const isAdmin = club.admin_id === user?.id
   const isMember = (club.members ?? []).some(m => m.user_id === user?.id)
   const clubRides = rides.filter(r => r.club_id === club.id)
+  const initialRidesLoading = ridesLoading && clubRides.length === 0
   const memberIds = (club.members ?? []).map(m => m.user_id)
 
   const matchesSearch = (r: Profile) => {
@@ -379,14 +380,19 @@ export default function ClubScreen() {
         ))}
 
         {tab === 'rides' && (
-          clubRides.length === 0 ? (
+          clubRides.length === 0 && !initialRidesLoading ? (
             <View style={styles.emptyRides}>
               <Bike size={32} color={colors.slate400} />
               <Text style={styles.emptyText}>No rides for this club yet</Text>
             </View>
           ) : (
             clubRides.map(ride => (
-              <RideCard key={ride.id} ride={ride} onRideDeleted={refetchRides} />
+              <RideCard
+                key={ride.id}
+                ride={ride}
+                onRideDeleted={refetchRides}
+                disableChatNavigation={initialRidesLoading}
+              />
             ))
           )
         )}
