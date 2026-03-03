@@ -1,22 +1,21 @@
 /**
  * OneSignal push notifications for ride chat messages.
  * Uses external user IDs (Supabase user IDs) so the backend can target users.
- * No-ops in Expo Go (native module not available); use a dev build for real push.
+ * Safely no-ops when the native OneSignal module is not available (e.g. Expo Go, web).
  */
 
-import Constants from 'expo-constants'
+import { Platform } from 'react-native'
 import { router } from 'expo-router'
 import type { NotificationClickEvent } from 'react-native-onesignal'
 
-// Only load native module when not in Expo Go (avoids "native module doesn't exist" crash)
-const isExpoGo = Constants.appOwnership === 'expo'
 let OneSignal: typeof import('react-native-onesignal').OneSignal | null = null
-if (!isExpoGo) {
-  try {
+try {
+  // Dynamic require so that web / Expo Go don't crash if the native module isn't present
+  if (Platform.OS === 'ios' || Platform.OS === 'android') {
     OneSignal = require('react-native-onesignal').OneSignal
-  } catch {
-    // native module not available (e.g. web, or dev build without OneSignal)
   }
+} catch {
+  // native module not available (e.g. web, Expo Go, or build without OneSignal)
 }
 
 const ONESIGNAL_APP_ID =
