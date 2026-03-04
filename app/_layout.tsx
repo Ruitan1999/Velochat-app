@@ -12,11 +12,14 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter'
+import Constants from 'expo-constants'
 import { router, useSegments, useRootNavigationState } from 'expo-router'
 import { AuthProvider, useAuth } from '../src/lib/AuthContext'
 import { initOneSignal, setupOneSignalNotificationClick } from '../src/lib/onesignal'
 import { setupNotificationListeners } from '../src/lib/notifications'
 import { colors } from '../src/lib/theme'
+
+const isExpoGo = Constants.appOwnership === 'expo'
 
 function AuthGate() {
   const { session, loading } = useAuth()
@@ -36,11 +39,14 @@ function AuthGate() {
     }
   }, [session, loading, segments, navState?.key])
 
-  // Notification click → deep link to chat (OneSignal + Expo push)
+  // Notification click → deep link to chat (OneSignal + Expo push). Skip in Expo Go (no native push).
   useEffect(() => {
-    // Init early so the click listener can catch killed-state taps
     initOneSignal()
     const unsubOneSignal = setupOneSignalNotificationClick()
+
+    if (isExpoGo) {
+      return () => unsubOneSignal?.()
+    }
 
     const unsubExpo = setupNotificationListeners(
       () => {},
@@ -55,7 +61,6 @@ function AuthGate() {
       }
     )
 
-    // App opened from killed state by tapping notification (Expo)
     const checkLastResponse = async () => {
       try {
         const { getLastNotificationResponseAsync } = await import('expo-notifications')

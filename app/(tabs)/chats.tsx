@@ -234,12 +234,14 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
       return
     }
 
-    // Fallback: look up the ride's chat room directly
+    // Fallback: look up the ride's chat room directly (only if not expired)
+    const now = new Date().toISOString()
     const { data, error } = await supabase
       .from('chat_rooms')
       .select('id')
       .eq('ride_id', ride.id)
       .eq('type', 'ride')
+      .gt('expiry', now)
       .maybeSingle()
 
     if (error) {

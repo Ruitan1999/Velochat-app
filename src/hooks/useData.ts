@@ -46,6 +46,9 @@ export function useRides() {
       const invitedByRsvp = (r.rsvps ?? []).some((rv: any) => rv.user_id === user.id)
       if (!(isOrganizer || inClub || invitedByRsvp)) return false
 
+      // Hide ride when its chat has expired (use ride.chat_expiry so we don't depend on join)
+      if (r.chat_expiry != null && new Date(r.chat_expiry).getTime() <= now) return false
+
       // Keep rides visible until 24h after the scheduled ride datetime
       try {
         if (!r.date || !r.time) return true
@@ -67,7 +70,9 @@ export function useRides() {
     })
 
     const rides = filtered.map((r: any) => {
-      const chatRoom = r.chat_rooms?.[0] ?? null
+      const rawRoom = r.chat_rooms?.[0] ?? null
+      const expired = rawRoom?.expiry && new Date(rawRoom.expiry).getTime() <= now
+      const chatRoom = rawRoom && !expired ? rawRoom : null
       const unread = chatRoom ? (unreadByRoom.get(chatRoom.id) ?? 0) : 0
       return {
         ...r,
@@ -120,6 +125,9 @@ export function useChatRooms() {
   const fetch = useCallback(async () => {
     if (!user) return
     setLoading(true)
+    // Clean up expired rooms in the background (in addition to pg_cron)
+    supabase.rpc('delete_expired_chat_rooms').then(() => {}).catch(() => {})
+    const nowIso = new Date().toISOString()
     const { data } = await supabase
       .from('chat_rooms')
       .select(`
@@ -127,6 +135,7 @@ export function useChatRooms() {
         participants:chat_participants(user_id, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))
       `)
       .eq('type', 'general')
+      .gt('expiry', nowIso)
       .order('created_at', { ascending: false })
 
     // Filter to rooms user is a participant of

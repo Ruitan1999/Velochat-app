@@ -104,6 +104,16 @@ export default function ChatScreen() {
       return
     }
 
+    if (data.expiry && new Date(data.expiry).getTime() <= Date.now()) {
+      await supabase.rpc('delete_expired_chat_rooms')
+      Alert.alert(
+        'Chat expired',
+        'This chat has expired and has been removed.',
+        [{ text: 'OK', onPress: () => router.back() }],
+      )
+      return
+    }
+
     setRoom(data)
     if (data?.title) setHeaderTitle(data.title)
 

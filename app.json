@@ -4,7 +4,7 @@
     "slug": "velochat",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/velochat-splash.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/velochat-splash.png",
@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.yourname.velochat",
+      "bundleIdentifier": "Velochat",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "VeloChat uses your location to show nearby rides.",
         "NSCameraUsageDescription": "VeloChat uses your camera for profile photos.",
@@ -27,7 +27,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f172a"
       },
-      "package": "com.yourname.velochat",
+      "package": "Velochat",
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "POST_NOTIFICATIONS",
@@ -51,7 +51,7 @@
       [
         "onesignal-expo-plugin",
         {
-          "mode": "development"
+          "mode": "production"
         }
       ],
       "@react-native-community/datetimepicker"
