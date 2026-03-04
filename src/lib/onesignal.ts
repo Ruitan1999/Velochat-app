@@ -59,10 +59,12 @@ export function setupOneSignalNotificationClick(): (() => void) | undefined {
   if (!OneSignal) return undefined
 
   const navigateFromNotification = (data: Record<string, string> | undefined) => {
-    if (!data?.roomId && !data?.rideId) return
+    const roomId = typeof data?.roomId === 'string' ? data.roomId.trim() : ''
+    const rideId = typeof data?.rideId === 'string' ? data.rideId.trim() : ''
+    if (!roomId && !rideId) return
     setTimeout(() => {
-      if (data.roomId) router.push(`/chat/${data.roomId}` as any)
-      else if (data.rideId) router.push(`/ride/${data.rideId}` as any)
+      if (roomId) router.push(`/chat/${roomId}` as any)
+      else if (rideId) router.push(`/ride/${rideId}` as any)
     }, 300)
   }
 

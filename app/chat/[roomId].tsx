@@ -39,8 +39,16 @@ const QUICK_REPLIES_GENERAL = [
 
 export default function ChatScreen() {
   const { roomId: roomIdParam } = useLocalSearchParams<{ roomId: string | string[] }>()
-  const roomId = typeof roomIdParam === 'string' ? roomIdParam : roomIdParam?.[0]
+  const rawRoomId = typeof roomIdParam === 'string' ? roomIdParam : roomIdParam?.[0]
+  const roomId = typeof rawRoomId === 'string' && rawRoomId.trim() ? rawRoomId.trim() : undefined
   const { user, profile, loading: authLoading } = useAuth()
+
+  // Invalid or missing roomId (e.g. from old notification with lost payload) → go back
+  useEffect(() => {
+    if (!authLoading && !roomId) {
+      router.back()
+    }
+  }, [authLoading, roomId])
   const { messages, loading, sendMessage, sendImage } = useMessages(roomId ?? '')
   const [room, setRoom] = useState<ChatRoomWithClub | null>(null)
   const [headerTitle, setHeaderTitle] = useState('...')
@@ -205,6 +213,13 @@ export default function ChatScreen() {
       }
     }, [loadRoom, roomId, user]),
   )
+
+  // When opened from an old notification, auth may not be ready yet; load room once user becomes available
+  useEffect(() => {
+    if (roomId && user && !room && !authLoading) {
+      loadRoom()
+    }
+  }, [roomId, user, room, authLoading, loadRoom])
 
   const isOwner = room?.created_by === user?.id
   const isRide = room?.type === 'ride'

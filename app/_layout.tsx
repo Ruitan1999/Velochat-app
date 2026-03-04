@@ -40,7 +40,10 @@ function AuthGate() {
   }, [session, loading, segments, navState?.key])
 
   // Notification click → deep link to chat (OneSignal + Expo push). Skip in Expo Go (no native push).
+  // Only navigate when auth is ready so the chat screen can load the room; validate roomId to avoid empty room.
   useEffect(() => {
+    if (loading || !session) return
+
     initOneSignal()
     const unsubOneSignal = setupOneSignalNotificationClick()
 
@@ -48,16 +51,19 @@ function AuthGate() {
       return () => unsubOneSignal?.()
     }
 
+    const navigateToRoom = (roomId: string | undefined) => {
+      const id = typeof roomId === 'string' ? roomId.trim() : ''
+      if (!id) return
+      setTimeout(() => {
+        router.push(`/chat/${id}` as any)
+      }, 100)
+    }
+
     const unsubExpo = setupNotificationListeners(
       () => {},
       (response: any) => {
         const data = response?.notification?.request?.content?.data ?? {}
-        const roomId = data?.roomId ?? data?.room_id
-        if (roomId) {
-          setTimeout(() => {
-            router.push(`/chat/${roomId}` as any)
-          }, 100)
-        }
+        navigateToRoom(data?.roomId ?? data?.room_id)
       }
     )
 
@@ -66,10 +72,7 @@ function AuthGate() {
         const { getLastNotificationResponseAsync } = await import('expo-notifications')
         const last = await getLastNotificationResponseAsync()
         const data = last?.notification?.request?.content?.data ?? {}
-        const roomId = data?.roomId ?? data?.room_id
-        if (roomId) {
-          setTimeout(() => router.push(`/chat/${roomId}` as any), 300)
-        }
+        navigateToRoom(data?.roomId ?? data?.room_id)
       } catch {
         // ignore
       }
@@ -80,7 +83,7 @@ function AuthGate() {
       unsubOneSignal?.()
       unsubExpo?.()
     }
-  }, [])
+  }, [loading, session])
 
   if (loading) {
     return (
