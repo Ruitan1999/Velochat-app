@@ -22,6 +22,9 @@ import { fmtMessageTime, fmtTime } from '../../src/lib/utils'
 import { ChevronLeft, MoreVertical, Pencil, Trash2, MessageCircle, Send, Paperclip, X } from 'lucide-react-native'
 import * as ImagePicker from 'expo-image-picker'
 
+// On iOS, custom fonts (e.g. Inter) don't include emoji; use system font so emoji render.
+const iosEmojiFont = Platform.OS === 'ios' ? { fontFamily: 'System' as const } : {}
+
 const QUICK_REPLIES_RIDE = [
   { label: '✅ I\'m In!', text: 'I\'m in!' },
   { label: '❌ I\'m Out', text: 'I\'m out, can\'t make it.' },
@@ -338,7 +341,7 @@ export default function ChatScreen() {
             </Pressable>
           ) : (
             <View style={[styles.msgBubble, isMe ? styles.msgBubbleMe : styles.msgBubbleThem]}>
-              <Text style={[styles.msgText, isMe ? styles.msgTextMe : styles.msgTextThem]}>
+              <Text style={[styles.msgText, isMe ? styles.msgTextMe : styles.msgTextThem, iosEmojiFont]}>
                 {msg.text}
               </Text>
             </View>
@@ -662,7 +665,7 @@ function ChatComposer({
               style={styles.quickReply}
               onPress={() => { onQuickReply(item.text) }}
             >
-              <Text style={styles.quickReplyText}>{item.label}</Text>
+              <Text style={[styles.quickReplyText, iosEmojiFont]}>{item.label}</Text>
             </TouchableOpacity>
           )}
           showsHorizontalScrollIndicator={false}
@@ -677,7 +680,7 @@ function ChatComposer({
         <View style={styles.inputWrap}>
           <TextInput
             ref={inputRef}
-            style={styles.input}
+            style={[styles.input, iosEmojiFont]}
             placeholder="Say something..."
             placeholderTextColor={colors.slate400}
             selectionColor={colors.slate800}

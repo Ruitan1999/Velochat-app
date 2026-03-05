@@ -28,7 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>velochat</string>
-          <string>com.yourname.velochat</string>
+          <string>velochat</string>
         </array>
       </dict>
       <dict>

@@ -18,7 +18,7 @@ In **`app.json`**, set a unique iOS bundle identifier (must match the app in App
 }
 ```
 
-Replace `com.yourname.velochat` / `com.yourcompany.velochat` with your own (e.g. `com.velochat.app`).
+Replace with your own if different (current: `velochat`).
 
 ---
 

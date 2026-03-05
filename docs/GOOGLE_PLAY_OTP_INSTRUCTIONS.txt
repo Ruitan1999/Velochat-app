@@ -1,0 +1,17 @@
+VeloChat uses email sign-in with a one-time code (OTP). There is no password.
+
+HOW TO ACCESS THE APP (for reviewers):
+
+Option A — Sign up (new account)
+1. Open the app and tap "Sign up" (or "Create account").
+2. Enter your name and the test account email below.
+3. Tap to send the code. Check that email for a 8-digit one-time code from Supabase/VeloChat.
+4. Enter the code in the app and tap Verify. You will be signed in.
+
+Test account (for Google Play review only):
+Email: [REPLACE-WITH-YOUR-REVIEWER-TEST-EMAIL@example.com]
+
+Notes:
+- Codes are sent by email and expire after a short time. Request a new code if needed.
+- If the test email does not receive the code, check spam/junk or contact the developer.
+Developer contact: [REPLACE-WITH-YOUR-SUPPORT-EMAIL]

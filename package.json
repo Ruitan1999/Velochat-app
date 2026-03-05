@@ -9,8 +9,10 @@
     "build:android": "npx eas build --platform android",
     "build:ios": "npx eas build --platform ios",
     "build:ios:preview": "npx eas build --platform ios --profile preview",
+    "build:ios:preview:clean": "npx eas build --platform ios --profile preview --clear-cache",
     "build:ios:preview:simulator": "npx eas build --platform ios --profile preview-simulator",
     "build:ios:store": "npx eas build --platform ios --profile production --non-interactive",
+    "build:ios:store:clean": "npx eas build --platform ios --profile production --clear-cache",
     "submit:ios": "npx eas submit --platform ios --profile production --latest"
   },
   "dependencies": {
