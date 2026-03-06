@@ -71,7 +71,7 @@ export default function RideScreen() {
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
-          await supabase.from('rides').delete().eq('id', rideId)
+          await supabase.rpc('delete_ride', { p_ride_id: rideId })
           router.back()
         },
       },

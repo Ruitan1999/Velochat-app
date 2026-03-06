@@ -190,6 +190,7 @@ export default function OtpScreen() {
           textAlign="left"
           selectionColor={colors.blue500}
         />
+        <Text style={styles.expiryHint}>Your verification code expires in 10 minutes.</Text>
 
         <Button onPress={handleVerify} loading={loading} style={styles.submitBtn} disabled={code.length !== CODE_LENGTH}>
           Verify
@@ -254,6 +255,11 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     textAlign: 'left',
     color: colors.slate900,
+    marginBottom: 8,
+  },
+  expiryHint: {
+    fontSize: fontSize.sm,
+    color: colors.slate500,
     marginBottom: 24,
   },
   submitBtn: { marginBottom: 16 },

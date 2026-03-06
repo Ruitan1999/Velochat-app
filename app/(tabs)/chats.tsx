@@ -501,7 +501,7 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
                     text: 'Delete',
                     style: 'destructive',
                     onPress: async () => {
-                      await supabase.from('rides').delete().eq('id', ride.id)
+                      await supabase.rpc('delete_ride', { p_ride_id: ride.id })
                       onRideDeleted?.()
                     },
                   },

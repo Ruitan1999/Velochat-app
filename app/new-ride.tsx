@@ -122,6 +122,17 @@ export default function NewRideScreen() {
     if (!canPost || !user) return
     setLoading(true)
 
+    // Ride date and time for scheduled_at (used by cleanup: delete ride 24h after this)
+    const rideDate =
+      dateChoice === 'tomorrow' ? tomorrow : dateChoice === 'dayafter' ? dayAfter : customDateValue
+    const [hours, minutes] = (timeChoice === 'custom' ? timeToHHmm(customTimeValue) : timeChoice)
+      .split(':')
+      .map(Number)
+    const scheduledAt = new Date(rideDate)
+    scheduledAt.setHours(hours, minutes, 0, 0)
+
+    const chatExpiry = new Date(Date.now() + 24 * 3600000).toISOString()
+
     // Create ride
     const { data: ride, error } = await supabase.from('rides').insert({
       title,
@@ -131,7 +142,8 @@ export default function NewRideScreen() {
       organizer_id: user.id,
       club_id: inviteType === 'club' ? selectedClub : null,
       invite_type: inviteType,
-      chat_expiry: new Date(Date.now() + 24 * 3600000).toISOString(),
+      chat_expiry: chatExpiry,
+      scheduled_at: scheduledAt.toISOString(),
     }).select().single()
 
     if (error || !ride) {

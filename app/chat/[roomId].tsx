@@ -308,9 +308,10 @@ export default function ChatScreen() {
           text: 'Delete', style: 'destructive',
           onPress: async () => {
             if (room?.ride_id) {
-              await supabase.from('rides').delete().eq('id', room.ride_id)
+              await supabase.rpc('delete_ride', { p_ride_id: room.ride_id })
+            } else {
+              await supabase.from('chat_rooms').delete().eq('id', roomId)
             }
-            await supabase.from('chat_rooms').delete().eq('id', roomId)
             router.replace('/(tabs)/chats')
           },
         },
