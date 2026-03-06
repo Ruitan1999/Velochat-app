@@ -2,7 +2,7 @@
   "expo": {
     "name": "VeloChat",
     "slug": "velochat",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/velochat-splash.png",
     "userInterfaceStyle": "light",
