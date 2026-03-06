@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { AppState, AppStateStatus } from 'react-native'
 import { supabase, Ride, ChatRoom, Message, Club, Profile, Friendship } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 
@@ -182,28 +183,38 @@ export function useChatRooms() {
 }
 
 // ─── useMessages ──────────────────────────────────────────────
-// Fetches messages for a room + subscribes to realtime updates
+// Fetches messages for a room + subscribes to realtime updates.
+// Refetches when screen gains focus and when app returns to foreground so data stays fresh after backgrounding.
 
 export function useMessages(roomId: string) {
   const { user } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchMessages = useCallback(async () => {
     if (!roomId) return
-
-    supabase
+    setLoading(true)
+    const { data, error } = await supabase
       .from('messages')
       .select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color, avatar_url)')
       .eq('room_id', roomId)
       .order('created_at', { ascending: false })
       .limit(100)
-      .then(({ data }) => {
-        setMessages((data ?? []).reverse())
-        setLoading(false)
-      })
+    if (error) {
+      console.warn('useMessages fetch failed:', error.message)
+      setLoading(false)
+      return
+    }
+    setMessages((data ?? []).reverse())
+    setLoading(false)
+  }, [roomId])
 
-    // Realtime subscription
+  useEffect(() => {
+    if (!roomId) return
+
+    fetchMessages()
+
+    // Realtime subscription (new channel per roomId; cleanup on unmount or roomId change)
     const channel = supabase
       .channel(`messages:${roomId}`)
       .on('postgres_changes', {
@@ -223,7 +234,16 @@ export function useMessages(roomId: string) {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [roomId])
+  }, [roomId, fetchMessages])
+
+  // When app returns to foreground, refetch messages so we recover from stale/disconnected realtime
+  useEffect(() => {
+    if (!roomId) return
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') fetchMessages()
+    })
+    return () => sub.remove()
+  }, [roomId, fetchMessages])
 
   const sendMessage = async (text: string) => {
     if (!user || !text.trim()) return
@@ -324,7 +344,7 @@ export function useMessages(roomId: string) {
     }
   }
 
-  return { messages, loading, sendMessage, sendImage }
+  return { messages, loading, refetch: fetchMessages, sendMessage, sendImage }
 }
 
 // ─── useClubs ─────────────────────────────────────────────────

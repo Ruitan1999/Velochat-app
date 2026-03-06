@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useAuth } from '../src/lib/AuthContext'
 import { useClubs, useRiders } from '../src/hooks/useData'
 import { supabase } from '../src/lib/supabase'
@@ -13,10 +13,19 @@ import { colors, spacing, fontSize, fontWeight, radius } from '../src/lib/theme'
 import { ChevronLeft, Check } from 'lucide-react-native'
 
 export default function NewChatScreen() {
-  const { user } = useAuth()
-  const { clubs } = useClubs()
-  const { riders } = useRiders()
+  const { user, refreshProfile } = useAuth()
+  const { clubs, refetch: refetchClubs } = useClubs()
+  const { riders, refetch: refetchRiders } = useRiders()
   const myClubs = clubs.filter(c => c.is_member)
+
+  // Pull latest clubs and user data when opening new chat (e.g. after being invited to a club)
+  useFocusEffect(
+    React.useCallback(() => {
+      refetchClubs()
+      refreshProfile()
+      refetchRiders()
+    }, [refetchClubs, refreshProfile, refetchRiders])
+  )
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')

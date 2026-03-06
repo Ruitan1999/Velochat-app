@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import { AppState, AppStateStatus } from 'react-native'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase, Profile } from '../lib/supabase'
 import { initOneSignal, setOneSignalUserId, clearOneSignalUserId } from '../lib/onesignal'
@@ -67,9 +68,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     )
 
+    // When app returns to foreground, refresh session so API calls use a valid token after long background
+    const appSub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        supabase.auth.refreshSession().catch(() => {})
+      }
+    })
+
     return () => {
       clearTimeout(timeout)
       subscription.unsubscribe()
+      appSub.remove()
     }
   }, [])
 

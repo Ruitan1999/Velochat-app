@@ -52,7 +52,7 @@ export default function ChatScreen() {
       router.back()
     }
   }, [authLoading, roomId])
-  const { messages, loading, sendMessage, sendImage } = useMessages(roomId ?? '')
+  const { messages, loading, refetch: refetchMessages, sendMessage, sendImage } = useMessages(roomId ?? '')
   const [room, setRoom] = useState<ChatRoomWithClub | null>(null)
   const [headerTitle, setHeaderTitle] = useState('...')
   const [input, setInput] = useState('')
@@ -208,13 +208,15 @@ export default function ChatScreen() {
   useFocusEffect(
     useCallback(() => {
       loadRoom()
+      // Refetch messages when entering room (e.g. from notification or after app was backgrounded)
+      refetchMessages()
       return () => {
         // Mark the user as no longer viewing so they receive push notifications again
         if (roomId && user) {
           supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => {})
         }
       }
-    }, [loadRoom, roomId, user]),
+    }, [loadRoom, refetchMessages, roomId, user]),
   )
 
   // When opened from an old notification, auth may not be ready yet; load room once user becomes available

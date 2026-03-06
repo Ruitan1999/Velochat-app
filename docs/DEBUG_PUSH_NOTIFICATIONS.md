@@ -139,3 +139,34 @@ If **no new log** appears when you send a message, the trigger either isn’t fi
 ---
 
 **Summary:** You do **not** set headers or message content in the OneSignal UI. Title and body come from the backend. Use the **manual test** and **check_pg_net_responses** to see if the DB can call the function and if the trigger runs when you send a message; use **check_chat_participants** to ensure both users are in the room.
+
+---
+
+## 8. iOS not receiving push (app has notification permission)
+
+If the iOS app has push **enabled** in Settings but still doesn’t receive notifications (especially on TestFlight or App Store builds), the usual cause is an **APNs environment mismatch**.
+
+### A. `aps-environment`: development vs production
+
+- **Sandbox (development)** is used for debug/dev builds run from Xcode or a development client.
+- **Production** is used for TestFlight, Ad Hoc, and App Store builds.
+
+If the app is built for **production** but the entitlements use **development**, the device registers with APNs **sandbox** while OneSignal typically sends via **production** → notifications never arrive.
+
+**Fix in this project:**
+
+- **app.json**: The `expo-notifications` plugin is set with `"mode": "production"` so the built app gets the production APNs environment.
+- **ios/VeloChat/VeloChat.entitlements**: `aps-environment` is set to `production`.
+
+After changing this, create a **new build** (e.g. with EAS). Users who already had the app installed should **uninstall and reinstall** (or install the new build) so the device re-registers with the correct APNs environment.
+
+### B. OneSignal iOS setup
+
+- In **OneSignal Dashboard** → **Settings** → **Platforms** → **Apple iOS**, ensure you have uploaded an **APNs Auth Key (.p8)** or the correct **Production** certificate.
+- OneSignal uses the **production** key/certificate by default for delivery; it must match the app’s production build.
+
+### C. Other checks
+
+- **OneSignal → Audience → All Users**: Confirm the iOS device appears as a subscriber and has the correct **External User ID** (Supabase user UUID).
+- **Focus / Do Not Disturb**: Ensure the device isn’t in a mode that suppresses notifications.
+- **Reinstall**: After fixing `aps-environment` or OneSignal config, a clean install often fixes “no notifications” on iOS.

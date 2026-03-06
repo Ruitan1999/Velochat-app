@@ -5,7 +5,7 @@ import {
 } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useAuth } from '../src/lib/AuthContext'
 import { useClubs, useRiders } from '../src/hooks/useData'
 import { supabase } from '../src/lib/supabase'
@@ -34,10 +34,19 @@ const TIME_PRESETS = [
 ]
 
 export default function NewRideScreen() {
-  const { user, profile } = useAuth()
-  const { clubs } = useClubs()
-  const { riders, isFriend } = useRiders()
+  const { user, profile, refreshProfile } = useAuth()
+  const { clubs, refetch: refetchClubs } = useClubs()
+  const { riders, isFriend, refetch: refetchRiders } = useRiders()
   const myClubs = clubs.filter(c => c.is_member)
+
+  // Pull latest clubs and user data when opening post-ride (e.g. after being invited to a club)
+  useFocusEffect(
+    React.useCallback(() => {
+      refetchClubs()
+      refreshProfile()
+      refetchRiders()
+    }, [refetchClubs, refreshProfile, refetchRiders])
+  )
 
   const [title, setTitle] = useState('')
   const [dateChoice, setDateChoice] = useState<'tomorrow' | 'dayafter' | 'custom'>('tomorrow')
