@@ -1,5 +1,6 @@
 package com.yourname.velochat
 
+import com.velochat.BuildConfig
 import android.app.Application
 import android.content.res.Configuration
 

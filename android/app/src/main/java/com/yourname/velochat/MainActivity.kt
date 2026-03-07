@@ -1,5 +1,7 @@
 package com.yourname.velochat
 
+import com.velochat.BuildConfig
+import com.velochat.R
 import android.os.Build
 import android.os.Bundle
 

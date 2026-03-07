@@ -63,8 +63,8 @@ export function setupOneSignalNotificationClick(): (() => void) | undefined {
     const rideId = typeof data?.rideId === 'string' ? data.rideId.trim() : ''
     if (!roomId && !rideId) return
     setTimeout(() => {
-      if (roomId) router.push(`/chat/${roomId}` as any)
-      else if (rideId) router.push(`/ride/${rideId}` as any)
+      if (roomId) router.replace(`/chat/${roomId}` as any)
+      else if (rideId) router.replace(`/ride/${rideId}` as any)
     }, 300)
   }
 

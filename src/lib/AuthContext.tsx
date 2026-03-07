@@ -1,15 +1,19 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { AppState, AppStateStatus } from 'react-native'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase, Profile } from '../lib/supabase'
 import { initOneSignal, setOneSignalUserId, clearOneSignalUserId } from '../lib/onesignal'
 import { getAvatarColor } from '../lib/theme'
 
+// Reconnect after background: both iOS and Android suspend/close connections when app is backgrounded
+
 type AuthContextType = {
   session: Session | null
   user: User | null
   profile: Profile | null
   loading: boolean
+  /** Increments when app returns from background; use in deps to re-subscribe realtime */
+  appResumeKey: number
   requestLoginOtp: (email: string) => Promise<{ error: Error | null }>
   requestSignUpOtp: (email: string, name: string) => Promise<{ error: Error | null }>
   verifyOtp: (email: string, token: string) => Promise<{ error: Error | null; userId?: string }>
@@ -18,7 +22,7 @@ type AuthContextType = {
   refreshProfile: (userId?: string) => Promise<void>
 }
 
-const AuthContext = createContext<AuthContextType>({} as AuthContextType)
+const AuthContext = createContext<AuthContextType>({ appResumeKey: 0 } as AuthContextType)
 
 // TEMP: mock user for testing without auth
 const MOCK_USER: User = {
@@ -46,6 +50,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(USE_MOCK_USER ? MOCK_USER : null)
   const [profile, setProfile] = useState<Profile | null>(USE_MOCK_USER ? MOCK_PROFILE : null)
   const [loading, setLoading] = useState(USE_MOCK_USER ? false : true)
+  const [appResumeKey, setAppResumeKey] = useState(0)
+  const prevStateRef = useRef<AppStateStatus>('active')
 
   useEffect(() => {
     if (USE_MOCK_USER) return
@@ -68,11 +74,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     )
 
-    // When app returns to foreground, refresh session so API calls use a valid token after long background
+    // Official Supabase React Native pattern: stop auto-refresh in background, restart on foreground.
+    // This is more reliable than manually calling refreshSession() which can timeout before the network is ready.
     const appSub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      const prev = prevStateRef.current
+      prevStateRef.current = state
       if (state === 'active') {
-        supabase.auth.refreshSession().catch(() => {})
+        supabase.auth.startAutoRefresh()
+      } else {
+        supabase.auth.stopAutoRefresh()
       }
+      const becameActiveFromBackgroundOrInactive = state === 'active' && (prev === 'background' || prev === 'inactive')
+      if (!becameActiveFromBackgroundOrInactive) return
+      setAppResumeKey(k => k + 1)
     })
 
     return () => {
@@ -163,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, requestLoginOtp, requestSignUpOtp, verifyOtp, signOut, updateProfile, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user, profile, loading, appResumeKey, requestLoginOtp, requestSignUpOtp, verifyOtp, signOut, updateProfile, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

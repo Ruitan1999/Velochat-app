@@ -20,8 +20,8 @@ import { registerForPushNotifications, saveFcmToken } from '../../src/lib/notifi
 
 export default function ChatsScreen() {
   const { user, profile } = useAuth()
-  const { rides, loading: ridesLoading, refetch: refetchRides } = useRides()
-  const { rooms, loading: roomsLoading, refetch: refetchRooms } = useChatRooms()
+  const { rides, loading: ridesLoading, refetch: refetchRides, refetchSilent: refetchRidesSilent } = useRides()
+  const { rooms, loading: roomsLoading, refetch: refetchRooms, refetchSilent: refetchRoomsSilent } = useChatRooms()
   const [sub, setSub] = useState<'rides' | 'general'>('rides')
   const [refreshing, setRefreshing] = useState(false)
   const scrollRef = React.useRef<ScrollView | null>(null)
@@ -50,12 +50,31 @@ export default function ChatsScreen() {
     }
   }, [user?.id])
 
+  // When app returns from background: refresh tab badge only (no feed remount to avoid breaking state)
+  useEffect(() => {
+    if (!user?.id) return
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return
+      timeoutId = setTimeout(() => {
+        timeoutId = null
+        refetchAndNotifyTabUnread(user.id)
+      }, 2000)
+    })
+    return () => {
+      sub.remove()
+      if (timeoutId != null) clearTimeout(timeoutId)
+    }
+  }, [user?.id])
+
   // Whenever the Chats tab/screen gains focus (including after returning from a chat room),
   // refresh rides + rooms and the tab bar unread dot.
   useFocusEffect(
     useCallback(() => {
       let isActive = true
       let timeoutId: ReturnType<typeof setTimeout> | null = null
+      let pollId: ReturnType<typeof setInterval> | null = null
+      const POLL_MS = 15000 // Fallback: refresh list every 15s when realtime doesn't fire (e.g. iOS)
       const run = async () => {
         await Promise.all([refetchRides(), refetchRooms()])
         if (isActive && scrollRef.current) {
@@ -67,9 +86,15 @@ export default function ChatsScreen() {
         }
       }
       run()
+      pollId = setInterval(() => {
+        refetchRides()
+        refetchRooms()
+        if (user?.id) refetchAndNotifyTabUnread(user.id)
+      }, POLL_MS)
       return () => {
         isActive = false
         if (timeoutId != null) clearTimeout(timeoutId)
+        if (pollId != null) clearInterval(pollId)
       }
     }, [refetchRides, refetchRooms, user?.id]),
   )
@@ -217,39 +242,55 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
   }
 
   const _openChat = async () => {
-    // Ensure the ride still exists before navigating to its chat room
-    const { data: latestRide } = await supabase
-      .from('rides')
-      .select('id, chat_expiry')
-      .eq('id', ride.id)
-      .maybeSingle()
-
-    if (!latestRide) {
-      Alert.alert('Ride no longer available', 'This ride has been removed.')
-      return
-    }
-
-    if (ride.chat_room) {
+    // If we already have the chat room (e.g. from list), navigate immediately so we don't block on slow network after resume
+    if (ride.chat_room?.id) {
       router.push(`/chat/${ride.chat_room.id}`)
       return
     }
 
-    // Fallback: look up the ride's chat room directly (only if not expired)
-    const now = new Date().toISOString()
-    const { data, error } = await supabase
-      .from('chat_rooms')
-      .select('id')
-      .eq('ride_id', ride.id)
-      .eq('type', 'ride')
-      .gt('expiry', now)
-      .maybeSingle()
+    const OPEN_CHAT_TIMEOUT_MS = 8000
+    const timeoutPromise = new Promise<{ latestRide: { chat_expiry: string } | null; roomId: string | null }>((_, rej) =>
+      setTimeout(() => rej(new Error('timeout')), OPEN_CHAT_TIMEOUT_MS)
+    )
 
-    if (error) {
-      console.error('Failed to load ride chat room:', error.message)
+    const fetchLatest = async () => {
+      const { data: latestRide } = await supabase
+        .from('rides')
+        .select('id, chat_expiry')
+        .eq('id', ride.id)
+        .maybeSingle()
+      if (!latestRide) return { latestRide: null, roomId: null }
+      const now = new Date().toISOString()
+      const { data: room } = await supabase
+        .from('chat_rooms')
+        .select('id')
+        .eq('ride_id', ride.id)
+        .eq('type', 'ride')
+        .gt('expiry', now)
+        .maybeSingle()
+      return { latestRide, roomId: room?.id ?? null }
     }
 
-    if (data?.id) {
-      router.push(`/chat/${data.id}`)
+    let latestRide: { chat_expiry: string } | null = null
+    let roomId: string | null = null
+    try {
+      const result = await Promise.race([fetchLatest(), timeoutPromise])
+      latestRide = result.latestRide
+      roomId = result.roomId
+    } catch (e) {
+      if (e instanceof Error && e.message === 'timeout') {
+        Alert.alert('Connection slow', 'Please try again or pull to refresh the list.')
+      }
+      return
+    }
+
+    if (roomId) {
+      router.push(`/chat/${roomId}`)
+      return
+    }
+
+    if (!latestRide) {
+      Alert.alert('Ride no longer available', 'This ride has been removed.')
       return
     }
 
@@ -275,14 +316,11 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
           return
         }
 
-        // Add organiser + anyone who has RSVP'd as a participant
         const participantIds = new Set<string>()
         participantIds.add(user.id)
         ;(ride.rsvps ?? []).forEach(r => {
           if (r.user_id) participantIds.add(r.user_id)
         })
-
-        // For club rides, also add all club members so they get push notifications
         if (ride.club_id) {
           const { data: clubMembers } = await supabase
             .from('club_members')
@@ -292,16 +330,13 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
             if (m.user_id) participantIds.add(m.user_id)
           })
         }
-
         const participantsPayload = Array.from(participantIds).map(id => ({
           room_id: room.id,
           user_id: id,
         }))
-
         if (participantsPayload.length > 0) {
           await supabase.from('chat_participants').insert(participantsPayload)
         }
-
         router.push(`/chat/${room.id}`)
         return
       } catch (e) {

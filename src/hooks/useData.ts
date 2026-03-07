@@ -1,7 +1,13 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { AppState, AppStateStatus } from 'react-native'
 import { supabase, Ride, ChatRoom, Message, Club, Profile, Friendship } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+
+// After resume (iOS & Android), network/realtime can be cut; timeouts and delayed refetch help reconnect
+const FETCH_TIMEOUT_MS = 25000
+// Delay refetch until after AuthContext refreshSession (8s max) has had time to complete
+const RESUME_REFETCH_DELAY_MS = 4500
+const RESUME_TIMEOUT_RETRY_DELAY_MS = 4000
 
 // ─── useRides ─────────────────────────────────────────────────
 // Fetches rides visible to the current user (their clubs + invited)
@@ -10,110 +16,140 @@ export function useRides() {
   const { user } = useAuth()
   const [rides, setRides] = useState<Ride[]>([])
   const [loading, setLoading] = useState(true)
+  const fetchRef = useRef<() => void>(() => {})
+  // Gate: block realtime-triggered fetches during the resume window (network not ready yet)
+  const isResumingRef = useRef(false)
 
-  const fetch = useCallback(async () => {
-    if (!user) return
-    setLoading(true)
-
-    // Get user's club IDs
-    const { data: memberships } = await supabase
-      .from('club_members')
-      .select('club_id')
-      .eq('user_id', user.id)
-
-    const clubIds = (memberships ?? []).map((m: { club_id: string }) => m.club_id)
-
-    // Fetch rides for those clubs or organized by user
-    const { data, error } = await supabase
-      .from('rides')
-      .select(`
-        *,
-        organizer:profiles!organizer_id(id, name, avatar_initials, avatar_color, avatar_url),
-        rsvps:ride_rsvps(*, profile:profiles!user_id(id, name, avatar_initials, avatar_color, avatar_url)),
-        chat_rooms(*)
-      `)
-      .or(`organizer_id.eq.${user.id},club_id.in.(${clubIds.join(',')})`)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.warn('Failed to load rides:', error.message)
+  const fetch = useCallback(async (opts?: { silent?: boolean; retryAfterTimeout?: boolean }) => {
+    if (!user) {
+      setLoading(false)
+      return
     }
-
-    const now = Date.now()
-
-    const filtered = (data ?? []).filter((r: any) => {
-      const inClub = r.club_id && clubIds.includes(r.club_id)
-      const isOrganizer = r.organizer_id === user.id
-      const invitedByRsvp = (r.rsvps ?? []).some((rv: any) => rv.user_id === user.id)
-      if (!(isOrganizer || inClub || invitedByRsvp)) return false
-
-      // Hide ride when its chat has expired (use ride.chat_expiry so we don't depend on join)
-      if (r.chat_expiry != null && new Date(r.chat_expiry).getTime() <= now) return false
-
-      // Keep rides visible until 24h after the scheduled ride datetime
-      try {
-        if (!r.date || !r.time) return true
-        const rideDateTime = new Date(`${r.date}T${r.time}`)
-        if (Number.isNaN(rideDateTime.getTime())) return true
-        const hideAfter = rideDateTime.getTime() + 24 * 60 * 60 * 1000
-        return now < hideAfter
-      } catch {
-        // If anything goes wrong parsing dates, fail open and keep the ride visible
-        return true
+    if (!opts?.silent) setLoading(true)
+    const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT_MS))
+    const doFetch = async (): Promise<Ride[]> => {
+      const { data: memberships } = await supabase
+        .from('club_members')
+        .select('club_id')
+        .eq('user_id', user.id)
+      const clubIds = (memberships ?? []).map((m: { club_id: string }) => m.club_id)
+      const ridesQuery = supabase
+        .from('rides')
+        .select(`
+          *,
+          organizer:profiles!organizer_id(id, name, avatar_initials, avatar_color, avatar_url),
+          rsvps:ride_rsvps(*, profile:profiles!user_id(id, name, avatar_initials, avatar_color, avatar_url)),
+          chat_rooms(*)
+        `)
+      const { data, error } = clubIds.length > 0
+        ? await ridesQuery.or(`organizer_id.eq.${user.id},club_id.in.(${clubIds.join(',')})`).order('created_at', { ascending: false })
+        : await ridesQuery.eq('organizer_id', user.id).order('created_at', { ascending: false })
+      if (error) console.warn('Failed to load rides:', error.message)
+      const now = Date.now()
+      const filtered = (data ?? []).filter((r: any) => {
+        const inClub = r.club_id && clubIds.includes(r.club_id)
+        const isOrganizer = r.organizer_id === user.id
+        const invitedByRsvp = (r.rsvps ?? []).some((rv: any) => rv.user_id === user.id)
+        if (!(isOrganizer || inClub || invitedByRsvp)) return false
+        if (r.chat_expiry != null && new Date(r.chat_expiry).getTime() <= now) return false
+        try {
+          if (!r.date || !r.time) return true
+          const rideDateTime = new Date(`${r.date}T${r.time}`)
+          if (Number.isNaN(rideDateTime.getTime())) return true
+          return now < rideDateTime.getTime() + 24 * 60 * 60 * 1000
+        } catch (_) {
+          return true
+        }
+      })
+      const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
+      const unreadByRoom = new Map<string, number>()
+      ;(unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
+        unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
+      })
+      return filtered.map((r: any) => {
+        const rawRoom = r.chat_rooms?.[0] ?? null
+        const expired = rawRoom?.expiry && new Date(rawRoom.expiry).getTime() <= now
+        const chatRoom = rawRoom && !expired ? rawRoom : null
+        const unread = chatRoom ? (unreadByRoom.get(chatRoom.id) ?? 0) : 0
+        return {
+          ...r,
+          chat_room: chatRoom ? { ...chatRoom, unread_count: unread } : null,
+          chat_rooms: undefined,
+        }
+      })
+    }
+    try {
+      const result = await Promise.race([doFetch(), timeoutPromise])
+      setRides(result)
+    } catch (e) {
+      if (e instanceof Error && e.message === 'timeout') {
+        console.warn('Rides fetch timed out (e.g. after app resume)')
+        // Retry once after a delay so network/session can recover
+        if (opts?.silent && !opts?.retryAfterTimeout) {
+          setTimeout(() => fetchRef.current?.({ silent: true, retryAfterTimeout: true }), RESUME_TIMEOUT_RETRY_DELAY_MS)
+        }
+      } else {
+        console.warn('useRides fetch error:', e)
       }
-    })
-
-    // Fetch unread counts per room for current user (messages from others after last_read_at)
-    const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
-    const unreadByRoom = new Map<string, number>()
-    ;(unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
-      unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
-    })
-
-    const rides = filtered.map((r: any) => {
-      const rawRoom = r.chat_rooms?.[0] ?? null
-      const expired = rawRoom?.expiry && new Date(rawRoom.expiry).getTime() <= now
-      const chatRoom = rawRoom && !expired ? rawRoom : null
-      const unread = chatRoom ? (unreadByRoom.get(chatRoom.id) ?? 0) : 0
-      return {
-        ...r,
-        chat_room: chatRoom ? { ...chatRoom, unread_count: unread } : null,
-        chat_rooms: undefined,
-      }
-    })
-    setRides(rides)
-    setLoading(false)
+    } finally {
+      if (!opts?.silent) setLoading(false)
+    }
   }, [user])
 
+  fetchRef.current = fetch
   useEffect(() => { fetch() }, [fetch])
 
   useEffect(() => {
     if (!user) return
 
     const channel = supabase
-      .channel('rides-updates')
+      .channel(`rides-updates-${user.id}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'ride_rsvps',
-      }, () => fetch())
+      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
-      }, () => fetch())
+      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'chat_participants',
         filter: `user_id=eq.${user.id}`,
-      }, () => fetch())
+      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user, fetch])
+  }, [user])
 
-  return { rides, loading, refetch: fetch, setRides }
+  // Refetch when becoming active from background or inactive (covers "leave app and return" and background→inactive→active).
+  const prevStateRef = useRef<AppStateStatus>('active')
+  useEffect(() => {
+    if (!user) return
+    let t: ReturnType<typeof setTimeout> | null = null
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      const prev = prevStateRef.current
+      prevStateRef.current = state
+      const becameActiveFromBackgroundOrInactive = state === 'active' && (prev === 'background' || prev === 'inactive')
+      if (!becameActiveFromBackgroundOrInactive) return
+      isResumingRef.current = true
+      t = setTimeout(() => {
+        t = null
+        isResumingRef.current = false
+        fetchRef.current?.({ silent: true })
+      }, RESUME_REFETCH_DELAY_MS)
+    })
+    return () => {
+      sub.remove()
+      if (t != null) clearTimeout(t)
+    }
+  }, [user])
+
+  const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])
+  return { rides, loading, refetch: fetch, refetchSilent, setRides }
 }
 
 // ─── useChatRooms ─────────────────────────────────────────────
@@ -122,64 +158,117 @@ export function useChatRooms() {
   const { user } = useAuth()
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [loading, setLoading] = useState(true)
+  const fetchRef = useRef<() => void>(() => {})
+  // Gate: block realtime-triggered fetches during the resume window (network not ready yet)
+  const isResumingRef = useRef(false)
 
-  const fetch = useCallback(async () => {
-    if (!user) return
-    setLoading(true)
-    // Clean up expired rooms in the background (in addition to pg_cron)
-    supabase.rpc('delete_expired_chat_rooms').then(() => {}).catch(() => {})
-    const nowIso = new Date().toISOString()
-    const { data } = await supabase
-      .from('chat_rooms')
-      .select(`
-        *,
-        participants:chat_participants(user_id, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))
-      `)
-      .eq('type', 'general')
-      .gt('expiry', nowIso)
-      .order('created_at', { ascending: false })
-
-    // Filter to rooms user is a participant of
-    const myRooms = (data ?? []).filter((r: ChatRoom & { participants: { user_id: string }[] }) =>
-      r.participants?.some((p: { user_id: string }) => p.user_id === user.id)
+  const fetch = useCallback(async (opts?: { silent?: boolean; retryAfterTimeout?: boolean }) => {
+    if (!user) {
+      setLoading(false)
+      return
+    }
+    if (!opts?.silent) setLoading(true)
+    const timeoutPromise = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT_MS)
     )
-
-    // Attach unread counts per room for this user
-    const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
-    const unreadByRoom = new Map<string, number>()
-    ;(unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
-      unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
-    })
-
-    const withUnread = myRooms.map((r: any) => ({
-      ...r,
-      unread_count: unreadByRoom.get(r.id) ?? 0,
-    }))
-
-    setRooms(withUnread)
-    setLoading(false)
+    const doFetch = async (): Promise<ChatRoom[]> => {
+      supabase.rpc('delete_expired_chat_rooms').then(() => {}).catch(() => {})
+      const nowIso = new Date().toISOString()
+      const { data } = await supabase
+        .from('chat_rooms')
+        .select(`
+          *,
+          participants:chat_participants(user_id, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))
+        `)
+        .eq('type', 'general')
+        .gt('expiry', nowIso)
+        .order('created_at', { ascending: false })
+      const myRooms = (data ?? []).filter((r: ChatRoom & { participants: { user_id: string }[] }) =>
+        r.participants?.some((p: { user_id: string }) => p.user_id === user.id)
+      )
+      const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
+      const unreadByRoom = new Map<string, number>()
+      ;(unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
+        unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
+      })
+      return myRooms.map((r: any) => ({
+        ...r,
+        unread_count: unreadByRoom.get(r.id) ?? 0,
+      }))
+    }
+    try {
+      const result = await Promise.race([doFetch(), timeoutPromise])
+      setRooms(result)
+    } catch (e) {
+      if (e instanceof Error && e.message === 'timeout') {
+        console.warn('Chat rooms fetch timed out (e.g. after app resume)')
+        if (opts?.silent && !opts?.retryAfterTimeout) {
+          setTimeout(() => fetchRef.current?.({ silent: true, retryAfterTimeout: true }), RESUME_TIMEOUT_RETRY_DELAY_MS)
+        }
+      } else {
+        console.warn('useChatRooms fetch error:', e)
+      }
+    } finally {
+      if (!opts?.silent) setLoading(false)
+    }
   }, [user])
 
+  fetchRef.current = fetch
   useEffect(() => { fetch() }, [fetch])
 
+  // Realtime: new messages, new rooms, or added as participant → refetch list
+  // Use ref so callback always runs latest fetch (avoids stale closure, e.g. on iOS)
   useEffect(() => {
     if (!user) return
 
     const channel = supabase
-      .channel('general-chat-unreads')
+      .channel(`chat-list-${user.id}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
-      }, () => {
-        fetch()
-      })
+      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_rooms',
+      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_participants',
+        filter: `user_id=eq.${user.id}`,
+      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user, fetch])
+  }, [user])
 
-  return { rooms, loading, refetch: fetch, setRooms }
+  // Refetch when becoming active from background or inactive (covers "leave app and return" and background→inactive→active).
+  const prevStateRef = useRef<AppStateStatus>('active')
+  useEffect(() => {
+    if (!user) return
+    let t: ReturnType<typeof setTimeout> | null = null
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      const prev = prevStateRef.current
+      prevStateRef.current = state
+      const becameActiveFromBackgroundOrInactive = state === 'active' && (prev === 'background' || prev === 'inactive')
+      if (!becameActiveFromBackgroundOrInactive) return
+      isResumingRef.current = true
+      t = setTimeout(() => {
+        t = null
+        isResumingRef.current = false
+        fetchRef.current?.({ silent: true })
+      }, RESUME_REFETCH_DELAY_MS)
+    })
+    return () => {
+      sub.remove()
+      if (t != null) clearTimeout(t)
+    }
+  }, [user])
+
+  const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])
+  return { rooms, loading, refetch: fetch, refetchSilent, setRooms }
 }
 
 // ─── useMessages ──────────────────────────────────────────────
@@ -210,7 +299,11 @@ export function useMessages(roomId: string) {
   }, [roomId])
 
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId) {
+      setLoading(false)
+      setMessages([])
+      return
+    }
 
     fetchMessages()
 
@@ -236,7 +329,7 @@ export function useMessages(roomId: string) {
     return () => { supabase.removeChannel(channel) }
   }, [roomId, fetchMessages])
 
-  // When app returns to foreground, refetch messages so we recover from stale/disconnected realtime
+  // When app returns to foreground, refetch messages so we recover from disconnected realtime
   useEffect(() => {
     if (!roomId) return
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
@@ -245,7 +338,7 @@ export function useMessages(roomId: string) {
     return () => sub.remove()
   }, [roomId, fetchMessages])
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string): Promise<{ roomDeleted?: boolean } | void> => {
     if (!user || !text.trim()) return
 
     const optimistic: Message = {
@@ -271,8 +364,12 @@ export function useMessages(roomId: string) {
     }).select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color, avatar_url)').single()
 
     if (error) {
-      console.error('sendMessage failed:', error.message, error.details, error.hint)
       setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+      // Foreign key violation means the room no longer exists
+      if (error.code === '23503' || /not present in table.*chat_rooms/i.test(error.message)) {
+        return { roomDeleted: true }
+      }
+      console.error('sendMessage failed:', error.message, error.details, error.hint)
       return
     }
 
@@ -355,23 +452,31 @@ export function useClubs() {
   const [loading, setLoading] = useState(true)
 
   const fetch = useCallback(async () => {
-    if (!user) return
+    if (!user) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    const { data } = await supabase
-      .from('clubs')
-      .select(`
-        *,
-        members:club_members(user_id, role, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))
-      `)
-      .order('name')
+    try {
+      const { data } = await supabase
+        .from('clubs')
+        .select(`
+          *,
+          members:club_members(user_id, role, profile:profiles(id, name, avatar_initials, avatar_color, avatar_url))
+        `)
+        .order('name')
 
-    const enriched = (data ?? []).map((c: Club & { members: { user_id: string; role: string }[] }) => ({
-      ...c,
-      is_member: c.members?.some((m: { user_id: string }) => m.user_id === user.id),
-      is_admin: c.admin_id === user.id,
-    }))
-    setClubs(enriched)
-    setLoading(false)
+      const enriched = (data ?? []).map((c: Club & { members: { user_id: string; role: string }[] }) => ({
+        ...c,
+        is_member: c.members?.some((m: { user_id: string }) => m.user_id === user.id),
+        is_admin: c.admin_id === user.id,
+      }))
+      setClubs(enriched)
+    } catch (e) {
+      console.warn('useClubs fetch error:', e)
+    } finally {
+      setLoading(false)
+    }
   }, [user])
 
   useEffect(() => { fetch() }, [fetch])

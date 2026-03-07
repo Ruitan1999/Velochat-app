@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  StyleSheet, Alert, KeyboardAvoidingView, Platform, Animated,
+  StyleSheet, Alert, KeyboardAvoidingView, Platform, Animated, AppState,
 } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -66,19 +66,39 @@ export default function NewRideScreen() {
   const snackbarAnim = useRef(new Animated.Value(-100)).current
   const insets = useSafeAreaInsets()
 
+  const stopSnackbarAnimation = useCallback(() => {
+    if (snackbarTimeoutRef.current) {
+      clearTimeout(snackbarTimeoutRef.current)
+      snackbarTimeoutRef.current = null
+    }
+    snackbarAnim.stopAnimation()
+    snackbarAnim.setValue(-100)
+  }, [snackbarAnim])
+
   useEffect(() => {
     if (!showSnackbar) return
-    Animated.timing(snackbarAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start()
+    snackbarAnim.setValue(-100)
+    const animIn = Animated.timing(snackbarAnim, { toValue: 0, duration: 250, useNativeDriver: true })
+    animIn.start()
     snackbarTimeoutRef.current = setTimeout(() => {
-      Animated.timing(snackbarAnim, { toValue: -100, duration: 200, useNativeDriver: true }).start(() => setShowSnackbar(false))
+      snackbarTimeoutRef.current = null
+      const animOut = Animated.timing(snackbarAnim, { toValue: -100, duration: 200, useNativeDriver: true })
+      animOut.start(() => setShowSnackbar(false))
     }, 2500)
     return () => {
-      if (snackbarTimeoutRef.current) {
-        clearTimeout(snackbarTimeoutRef.current)
-        snackbarTimeoutRef.current = null
-      }
+      stopSnackbarAnimation()
     }
-  }, [showSnackbar])
+  }, [showSnackbar, snackbarAnim, stopSnackbarAnimation])
+
+  // Stop snackbar animation when app goes to background to avoid "onAnimatedValueUpdate with no listeners" on iOS
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' || state === 'inactive') {
+        stopSnackbarAnimation()
+      }
+    })
+    return () => sub.remove()
+  }, [stopSnackbarAnimation])
 
   useEffect(() => {
     if (!selectedClub && myClubs.length > 0) {

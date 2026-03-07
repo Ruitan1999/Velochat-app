@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, Alert,
   Keyboard, Pressable, Modal, Animated, ActivityIndicator, Image,
-  Dimensions,
+  Dimensions, AppState,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
@@ -54,7 +54,7 @@ export default function ChatScreen() {
   }, [authLoading, roomId])
   const { messages, loading, refetch: refetchMessages, sendMessage, sendImage } = useMessages(roomId ?? '')
   const [room, setRoom] = useState<ChatRoomWithClub | null>(null)
-  const [headerTitle, setHeaderTitle] = useState('...')
+  const [headerTitle, setHeaderTitle] = useState('Loading…')
   const [input, setInput] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [rideRoute, setRideRoute] = useState<{ polyline: string; distanceKm?: number; elevationGainM?: number; name?: string } | null>(null)
@@ -68,6 +68,7 @@ export default function ChatScreen() {
   const hasInitialScrolledRef = useRef(false)
   const isNearBottomRef = useRef(true)
   const lastMarkAsReadRef = useRef(0)
+  const roomNotFoundAlertedRef = useRef(false)
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window')
   const insets = useSafeAreaInsets()
 
@@ -94,10 +95,14 @@ export default function ChatScreen() {
   const loadRoom = useCallback(async () => {
     if (!roomId || !user) return
 
-    // RPC upserts participant and sets last_read_at = now(), is_active = true (not blocked by RLS)
-    await supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: true })
+    if (!room) setHeaderTitle('Loading…')
 
-    if (!room) setHeaderTitle('...')
+    // RLS requires user to be in chat_participants to read the room; wait for RPC (with timeout so we don't hang after resume)
+    const participantReady = Promise.race([
+      supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: true }).then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 5000)),
+    ])
+    await participantReady
 
     const { data, error } = await supabase
       .from('chat_rooms')
@@ -106,27 +111,36 @@ export default function ChatScreen() {
       .maybeSingle()
 
     if (error || !data) {
-      console.error('Failed to load room:', error?.message ?? 'Room not found')
-      Alert.alert(
-        'Ride no longer available',
-        'This ride or chat room is no longer available.',
-        [{ text: 'OK', onPress: () => router.back() }],
-      )
+      if (!roomNotFoundAlertedRef.current) {
+        roomNotFoundAlertedRef.current = true
+        Alert.alert(
+          'Chat unavailable',
+          'This chat room is no longer available.',
+          [{ text: 'OK', onPress: () => router.replace('/(tabs)/chats') }],
+          { cancelable: false },
+        )
+      }
       return
     }
 
+    roomNotFoundAlertedRef.current = false
+
     if (data.expiry && new Date(data.expiry).getTime() <= Date.now()) {
       await supabase.rpc('delete_expired_chat_rooms')
-      Alert.alert(
-        'Chat expired',
-        'This chat has expired and has been removed.',
-        [{ text: 'OK', onPress: () => router.back() }],
-      )
+      if (!roomNotFoundAlertedRef.current) {
+        roomNotFoundAlertedRef.current = true
+        Alert.alert(
+          'Chat expired',
+          'This chat has expired and has been removed.',
+          [{ text: 'OK', onPress: () => router.replace('/(tabs)/chats') }],
+          { cancelable: false },
+        )
+      }
       return
     }
 
     setRoom(data)
-    if (data?.title) setHeaderTitle(data.title)
+    setHeaderTitle(data?.title ?? 'Chat')
 
     // For ride chats, pull route + keep title in sync with ride title + time/location for message body
     if (data?.ride_id) {
@@ -210,7 +224,20 @@ export default function ChatScreen() {
       loadRoom()
       // Refetch messages when entering room (e.g. from notification or after app was backgrounded)
       refetchMessages()
+
+      // When the app goes to background while the user is still on this screen,
+      // mark them inactive so push notifications are delivered. Flip back to active on foreground.
+      const appStateSub = AppState.addEventListener('change', (state) => {
+        if (!roomId || !user) return
+        if (state === 'background') {
+          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => {})
+        } else if (state === 'active') {
+          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: true }).then(() => {})
+        }
+      })
+
       return () => {
+        appStateSub.remove()
         // Mark the user as no longer viewing so they receive push notifications again
         if (roomId && user) {
           supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => {})
@@ -230,18 +257,29 @@ export default function ChatScreen() {
   const isRide = room?.type === 'ride'
   const quickReplies = isRide ? QUICK_REPLIES_RIDE : QUICK_REPLIES_GENERAL
 
+  const handleRoomDeleted = () => {
+    Alert.alert(
+      'Chat Unavailable',
+      'This chat room is no longer available.',
+      [{ text: 'OK', onPress: () => router.replace('/(tabs)/chats') }],
+      { cancelable: false }
+    )
+  }
+
   const handleSend = async () => {
     if (!input.trim()) return
     const text = input.trim()
     setInput('')
-    await sendMessage(text)
+    const result = await sendMessage(text)
+    if (result?.roomDeleted) { handleRoomDeleted(); return }
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
   }
 
   const handleQuickReply = async (text: string) => {
     if (!text.trim()) return
     const trimmed = text.trim()
-    await sendMessage(trimmed)
+    const result = await sendMessage(trimmed)
+    if (result?.roomDeleted) { handleRoomDeleted(); return }
     // When user taps "I'm In!", "Let's ride!", or "I'm Out" in a ride chat, update ride_rsvps so it reflects on the ride card and message-body avatars
     if (isRide && room?.ride_id && user?.id) {
       if (trimmed === "I'm in!" || trimmed === "Let's ride! 🔥") {
@@ -321,7 +359,7 @@ export default function ChatScreen() {
     )
   }
 
-  const renderMessage = ({ item: msg }: { item: Message }) => {
+  const renderMessage = useCallback(({ item: msg }: { item: Message }) => {
     const isMe = msg.sender_id === user?.id
     return (
       <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
@@ -353,7 +391,7 @@ export default function ChatScreen() {
         </View>
       </View>
     )
-  }
+  }, [user?.id, setFullScreenImageUri])
 
   // Block entry while auth state is still resolving, or if we have no room id
   if (authLoading || !roomId) {
@@ -560,7 +598,7 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, ride
       style={styles.messageList}
       contentContainerStyle={[
         styles.messageContent,
-        { paddingBottom: keyboardOpen ? 20 : 20 },
+        { paddingBottom: keyboardOpen ? 30 : 30 },
       ]}
       showsVerticalScrollIndicator={false}
       keyboardDismissMode="on-drag"
@@ -620,7 +658,12 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, ride
         </View>
       }
       ListEmptyComponent={
-        !loading ? (
+        loading ? (
+          <View style={styles.emptyMessages}>
+            <ActivityIndicator size="large" color={colors.blue500} />
+            <Text style={styles.emptyMessagesLabel}>Loading messages…</Text>
+          </View>
+        ) : (
           <View style={styles.emptyMessages}>
             {!isRide && roomTitle ? (
               <Text style={styles.emptyMessagesTitle} numberOfLines={2}>{roomTitle}</Text>
@@ -628,7 +671,7 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, ride
             <MessageCircle size={36} color={colors.slate300} />
             <Text style={styles.emptyMessagesLabel}>No messages yet — say something!</Text>
           </View>
-        ) : null
+        )
       }
     />
   )
@@ -798,8 +841,8 @@ const styles = StyleSheet.create({
 
   msgRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-end' },
   msgRowMe: { flexDirection: 'row-reverse' },
-  msgBubbleWrap: { maxWidth: '75%', gap: 3 },
-  msgBubbleWrapMe: { alignItems: 'flex-end' },
+  msgBubbleWrap: { maxWidth: '75%', gap: 3, alignSelf: 'flex-start' },
+  msgBubbleWrapMe: { alignItems: 'flex-end', alignSelf: 'flex-end' },
   msgSender: { fontSize: fontSize.sm, color: colors.slate500, paddingLeft: 4 },
   msgBubble: {
     paddingHorizontal: 14, paddingVertical: 10,
@@ -813,6 +856,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderWidth: 1, borderColor: colors.slate200,
     borderBottomLeftRadius: 4,
+    alignSelf: 'flex-start',
   },
   msgText: { fontSize: fontSize.base, lineHeight: 20 },
   msgTextMe: { color: colors.white },
@@ -909,15 +953,18 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.slate200,
     borderRadius: radius.xxl,
     paddingHorizontal: spacing.lg,
-    paddingVertical: 3,
+    paddingVertical: 10,
     minHeight: 50,
     maxHeight: 96,
+    justifyContent: 'center',
   },
   input: {
     fontSize: fontSize.base,
     color: colors.slate800,
     lineHeight: 20,
-    textAlignVertical: 'top',
+    textAlignVertical: 'center',
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   sendBtn: {
     width: 42, height: 42, borderRadius: 21,

@@ -34,13 +34,12 @@
       }
     },
     "production": {
+      "autoIncrement": true,
       "ios": {
-        "buildConfiguration": "Release",
-        "autoIncrement": true
+        "buildConfiguration": "Release"
       },
       "android": {
-        "buildType": "app-bundle",
-        "autoIncrement": true
+        "buildType": "app-bundle"
       }
     }
   },
