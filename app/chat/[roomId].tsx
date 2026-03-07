@@ -46,10 +46,11 @@ export default function ChatScreen() {
   const roomId = typeof rawRoomId === 'string' && rawRoomId.trim() ? rawRoomId.trim() : undefined
   const { user, profile, loading: authLoading } = useAuth()
 
-  // Invalid or missing roomId (e.g. from old notification with lost payload) → go back
+  // Invalid or missing roomId (e.g. from old notification with lost payload) → go back or to chats
   useEffect(() => {
     if (!authLoading && !roomId) {
-      router.back()
+      if (router.canGoBack()) router.back()
+      else router.replace('/(tabs)/chats')
     }
   }, [authLoading, roomId])
   const { messages, loading, refetch: refetchMessages, sendMessage, sendImage } = useMessages(roomId ?? '')
@@ -437,7 +438,10 @@ export default function ChatScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/chats'))}
+          style={styles.backBtn}
+        >
           <ChevronLeft size={28} color={colors.slate400} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>

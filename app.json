@@ -7,9 +7,9 @@
     "icon": "./assets/velochat-splash.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/velochat-splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0f172a"
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": false,
