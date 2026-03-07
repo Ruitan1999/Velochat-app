@@ -52,25 +52,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(USE_MOCK_USER ? false : true)
   const [appResumeKey, setAppResumeKey] = useState(0)
   const prevStateRef = useRef<AppStateStatus>('active')
+  const mountedRef = useRef(true)
 
   useEffect(() => {
     if (USE_MOCK_USER) return
+    mountedRef.current = true
 
     initOneSignal()
-    const timeout = setTimeout(() => setLoading(false), 5000)
+    const timeout = setTimeout(() => {
+      if (mountedRef.current) setLoading(false)
+    }, 5000)
+
+    if (AppState.currentState === 'active') {
+      supabase.auth.startAutoRefresh()
+    }
+
+    const syncSession = async (nextSession: Session | null) => {
+      if (!mountedRef.current) return
+
+      setSession(nextSession)
+      setUser(nextSession?.user ?? null)
+
+      if (nextSession?.user) {
+        setOneSignalUserId(nextSession.user.id)
+        await fetchProfile(nextSession.user.id)
+        return
+      }
+
+      clearOneSignalUserId()
+      setProfile(null)
+      setLoading(false)
+    }
+
+    const bootstrapSession = async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        await syncSession(data.session ?? null)
+      } catch {
+        if (!mountedRef.current) return
+        clearOneSignalUserId()
+        setSession(null)
+        setUser(null)
+        setProfile(null)
+        setLoading(false)
+      }
+    }
+
+    void bootstrapSession()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session)
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await fetchProfile(session.user.id)
-          setOneSignalUserId(session.user.id)
-        } else {
-          clearOneSignalUserId()
-          setProfile(null)
-          setLoading(false)
-        }
+      async (_event, nextSession) => {
+        await syncSession(nextSession)
       }
     )
 
@@ -81,6 +113,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       prevStateRef.current = state
       if (state === 'active') {
         supabase.auth.startAutoRefresh()
+        void supabase.auth.getSession().then(({ data }) => {
+          if (!mountedRef.current) return
+          if (data.session?.user) {
+            setSession(data.session)
+            setUser(data.session.user)
+            setOneSignalUserId(data.session.user.id)
+          }
+        }).catch(() => {})
       } else {
         supabase.auth.stopAutoRefresh()
       }
@@ -90,7 +130,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => {
+      mountedRef.current = false
       clearTimeout(timeout)
+      supabase.auth.stopAutoRefresh()
       subscription.unsubscribe()
       appSub.remove()
     }

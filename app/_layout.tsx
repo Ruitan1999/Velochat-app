@@ -71,7 +71,7 @@ function AuthGate() {
       try {
         const { getLastNotificationResponseAsync } = await import('expo-notifications')
         const last = await getLastNotificationResponseAsync()
-        const data = last?.notification?.request?.content?.data ?? {}
+        const data = (last?.notification?.request?.content?.data ?? {}) as Record<string, string | undefined>
         navigateToRoom(data?.roomId ?? data?.room_id)
       } catch {
         // ignore

@@ -50,68 +50,82 @@ export default function OtpScreen() {
     if (digits.length < CODE_LENGTH) attemptedCodeRef.current = null
   }
 
-  const handleVerify = async () => {
-    if (code.length !== CODE_LENGTH) {
+  const handleVerify = async (inputCode?: string) => {
+    const codeToVerify = (inputCode ?? code).replace(/\D/g, '').slice(0, CODE_LENGTH)
+
+    if (loading) return
+
+    if (codeToVerify.length !== CODE_LENGTH) {
       Alert.alert('Invalid code', `Please enter the ${CODE_LENGTH}-digit code from your email.`)
       return
     }
-    attemptedCodeRef.current = code
+
+    attemptedCodeRef.current = codeToVerify
     setLoading(true)
-    const { error, userId } = await verifyOtp(email, code)
-    setLoading(false)
-    if (error) {
+
+    try {
+      const { error, userId } = await verifyOtp(email, codeToVerify)
+      if (error) {
+        attemptedCodeRef.current = null
+        Alert.alert('Verification failed', error.message)
+        return
+      }
+
+      if (flow === 'email-change') {
+        const targetEmail = (newEmail as string)?.trim().toLowerCase()
+        if (!targetEmail) {
+          Alert.alert('Error', 'Missing new email to update.')
+          return
+        }
+        const { error: updateError } = await supabase.auth.updateUser({ email: targetEmail })
+        if (updateError) {
+          Alert.alert('Error', updateError.message ?? 'Failed to update email')
+          return
+        }
+        Alert.alert('Email updated', 'Your email has been updated. If required, check your new inbox to confirm the change.')
+        router.replace('/(tabs)/profile')
+        return
+      }
+
+      // Navigate first so Root Layout is fully in control, then do signup avatar in background.
+      const navDelayMs = 150
+      setTimeout(() => {
+        router.replace('/(tabs)/chats')
+      }, navDelayMs)
+
+      if (flow === 'signup' && userId) {
+        const localUri = getSignupAvatarLocalUri()
+        clearSignupDraft()
+        if (localUri) {
+          // Run after navigation so we don't trigger "navigate before mount" from this stack.
+          setTimeout(async () => {
+            try {
+              const avatarUrl = await uploadAvatarFromUri({ userId, localUri })
+              await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', userId)
+              await refreshProfile(userId)
+            } catch {
+              // Optional — user can set avatar later in Profile.
+            }
+          }, navDelayMs + 50)
+        }
+      }
+    } catch (error) {
       attemptedCodeRef.current = null
-      Alert.alert('Verification failed', error.message)
-      return
-    }
-
-    if (flow === 'email-change') {
-      const targetEmail = (newEmail as string)?.trim().toLowerCase()
-      if (!targetEmail) {
-        Alert.alert('Error', 'Missing new email to update.')
-        return
-      }
-      const { error: updateError } = await supabase.auth.updateUser({ email: targetEmail })
-      if (updateError) {
-        Alert.alert('Error', updateError.message ?? 'Failed to update email')
-        return
-      }
-      Alert.alert('Email updated', 'Your email has been updated. If required, check your new inbox to confirm the change.')
-      router.replace('/(tabs)/profile')
-      return
-    }
-
-    // Navigate first so Root Layout is fully in control, then do signup avatar in background.
-    const navDelayMs = 150
-    setTimeout(() => {
-      router.replace('/(tabs)/chats')
-    }, navDelayMs)
-
-    if (flow === 'signup' && userId) {
-      const localUri = getSignupAvatarLocalUri()
-      clearSignupDraft()
-      if (localUri) {
-        // Run after navigation so we don't trigger "navigate before mount" from this stack.
-        setTimeout(async () => {
-          try {
-            const avatarUrl = await uploadAvatarFromUri({ userId, localUri })
-            await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', userId)
-            await refreshProfile(userId)
-          } catch {
-            // Optional — user can set avatar later in Profile.
-          }
-        }, navDelayMs + 50)
-      }
+      const message = error instanceof Error ? error.message : 'Something went wrong while verifying the code.'
+      Alert.alert('Verification failed', message)
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Auto-verify as soon as user enters 8 digits
+  // Slightly delay auto-verify so iOS paste/autofill can finish updating the native input first.
   useEffect(() => {
-    if (code.length === CODE_LENGTH && code !== attemptedCodeRef.current && !loading) {
-      attemptedCodeRef.current = code
-      handleVerify()
-    }
-  }, [code])
+    if (code.length !== CODE_LENGTH || code === attemptedCodeRef.current || loading) return
+    const t = setTimeout(() => {
+      void handleVerify(code)
+    }, 150)
+    return () => clearTimeout(t)
+  }, [code, loading])
 
   const handleBackToLogin = () => {
     router.replace('/(auth)/login')
@@ -187,6 +201,8 @@ export default function OtpScreen() {
           maxLength={CODE_LENGTH}
           autoFocus
           selectTextOnFocus
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
           textAlign="left"
           selectionColor={colors.blue500}
         />

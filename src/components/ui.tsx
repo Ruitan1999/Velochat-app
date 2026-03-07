@@ -34,11 +34,16 @@ export function Avatar({
   const { size: dim, font } = avatarDims[size]
   const bg = color ?? getAvatarColor(initials)
   const [imageError, setImageError] = React.useState(false)
+  const [imageLoaded, setImageLoaded] = React.useState(false)
   const effectiveUri = (uri && uri.trim()) || null
   const showImage = effectiveUri && !imageError
 
   React.useEffect(() => {
     setImageError(false)
+    setImageLoaded(false)
+    if (effectiveUri) {
+      void Image.prefetch(effectiveUri).catch(() => {})
+    }
   }, [effectiveUri])
 
   return (
@@ -54,18 +59,23 @@ export function Avatar({
         overflow: 'hidden',
       }, style]}
     >
-      {showImage ? (
-        <Image
-          source={{ uri: effectiveUri! }}
-          style={{ width: dim, height: dim }}
-          resizeMode="cover"
-          onError={() => setImageError(true)}
-        />
-      ) : (
+      {(!showImage || !imageLoaded) && (
         <Text style={{ color: colors.white, fontSize: font, fontWeight: fontWeight.bold }}>
           {initials}
         </Text>
       )}
+      {showImage ? (
+        <Image
+          source={{ uri: effectiveUri!, cache: 'force-cache' }}
+          style={{ width: dim, height: dim, position: 'absolute', opacity: imageLoaded ? 1 : 0 }}
+          resizeMode="cover"
+          onLoad={() => setImageLoaded(true)}
+          onError={() => {
+            setImageError(true)
+            setImageLoaded(false)
+          }}
+        />
+      ) : null}
     </View>
   )
 }

@@ -9,6 +9,8 @@ const FETCH_TIMEOUT_MS = 25000
 const RESUME_REFETCH_DELAY_MS = 4500
 const RESUME_TIMEOUT_RETRY_DELAY_MS = 4000
 
+type DataFetchOpts = { silent?: boolean; retryAfterTimeout?: boolean }
+
 // ─── useRides ─────────────────────────────────────────────────
 // Fetches rides visible to the current user (their clubs + invited)
 
@@ -16,11 +18,11 @@ export function useRides() {
   const { user } = useAuth()
   const [rides, setRides] = useState<Ride[]>([])
   const [loading, setLoading] = useState(true)
-  const fetchRef = useRef<() => void>(() => {})
+  const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => {})
   // Gate: block realtime-triggered fetches during the resume window (network not ready yet)
   const isResumingRef = useRef(false)
 
-  const fetch = useCallback(async (opts?: { silent?: boolean; retryAfterTimeout?: boolean }) => {
+  const fetch = useCallback(async (opts?: DataFetchOpts) => {
     if (!user) {
       setLoading(false)
       return
@@ -158,11 +160,11 @@ export function useChatRooms() {
   const { user } = useAuth()
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [loading, setLoading] = useState(true)
-  const fetchRef = useRef<() => void>(() => {})
+  const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => {})
   // Gate: block realtime-triggered fetches during the resume window (network not ready yet)
   const isResumingRef = useRef(false)
 
-  const fetch = useCallback(async (opts?: { silent?: boolean; retryAfterTimeout?: boolean }) => {
+  const fetch = useCallback(async (opts?: DataFetchOpts) => {
     if (!user) {
       setLoading(false)
       return
@@ -172,7 +174,7 @@ export function useChatRooms() {
       setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT_MS)
     )
     const doFetch = async (): Promise<ChatRoom[]> => {
-      supabase.rpc('delete_expired_chat_rooms').then(() => {}).catch(() => {})
+      void Promise.resolve(supabase.rpc('delete_expired_chat_rooms')).catch(() => {})
       const nowIso = new Date().toISOString()
       const { data } = await supabase
         .from('chat_rooms')

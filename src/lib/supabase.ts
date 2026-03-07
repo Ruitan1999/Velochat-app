@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as SecureStore from 'expo-secure-store'
 import { createClient } from '@supabase/supabase-js'
 import 'react-native-url-polyfill/auto'
 
@@ -9,7 +10,31 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: AsyncStorage,
+    storage: {
+      async getItem(key: string) {
+        const secureValue = await SecureStore.getItemAsync(key)
+        if (secureValue != null) return secureValue
+        const legacyValue = await AsyncStorage.getItem(key)
+        if (legacyValue != null) {
+          void SecureStore.setItemAsync(key, legacyValue).catch(() => {})
+        }
+        return legacyValue
+      },
+      async setItem(key: string, value: string) {
+        try {
+          await SecureStore.setItemAsync(key, value)
+          await AsyncStorage.removeItem(key)
+        } catch {
+          await AsyncStorage.setItem(key, value)
+        }
+      },
+      async removeItem(key: string) {
+        await Promise.allSettled([
+          SecureStore.deleteItemAsync(key),
+          AsyncStorage.removeItem(key),
+        ])
+      },
+    },
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
