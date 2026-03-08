@@ -5,7 +5,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, router } from 'expo-router'
-import { useAuth } from '../../src/lib/AuthContext'
+
 import { supabase, ChatRoom } from '../../src/lib/supabase'
 import { Button } from '../../src/components/ui'
 import { colors, spacing, fontSize, fontWeight, radius } from '../../src/lib/theme'
@@ -15,7 +15,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 export default function EditChatScreen() {
   const { roomId: roomIdParam } = useLocalSearchParams<{ roomId: string | string[] }>()
   const roomId = typeof roomIdParam === 'string' ? roomIdParam : roomIdParam?.[0]
-  const { user } = useAuth()
+
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [title, setTitle] = useState('')
   const [date, setDate] = useState('')

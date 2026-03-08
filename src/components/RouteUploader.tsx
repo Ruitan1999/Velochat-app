@@ -7,7 +7,7 @@ import * as FileSystem from 'expo-file-system'
 import { supabase } from '../lib/supabase'
 import { parseGPX, parseFIT, encodePolyline, simplifyRoute, ParsedRoute } from '../lib/parsers/routeParsers'
 import { RouteMap, ElevationProfile } from './RouteMap'
-import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../lib/theme'
+import { colors, spacing, fontSize, fontWeight, radius } from '../lib/theme'
 import { Zap, ArrowUp, X as XIcon, Paperclip } from 'lucide-react-native'
 
 type RouteUploadResult = {

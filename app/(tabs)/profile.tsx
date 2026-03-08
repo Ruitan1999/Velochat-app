@@ -11,7 +11,7 @@ import { colors, spacing, fontSize, fontWeight, radius } from '../../src/lib/the
 import { uploadAvatarFromUri } from '../../src/lib/avatarUpload'
 import { AvatarPicker } from '../../src/components/AvatarPicker'
 import {
-  User, Mail, Shield, Users,
+  User, Mail, Shield,
   LogOut, ChevronRight,
 } from 'lucide-react-native'
 

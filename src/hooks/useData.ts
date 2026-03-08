@@ -16,7 +16,7 @@ export function useRides() {
   const { user, appResumeKey } = useAuth()
   const [rides, setRides] = useState<Ride[]>([])
   const [loading, setLoading] = useState(true)
-  const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => {})
+  const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => { })
   const isResumingRef = useRef(false)
   const fetchInFlightRef = useRef(false)
 
@@ -59,15 +59,15 @@ export function useRides() {
           const rideDateTime = new Date(`${r.date}T${r.time}`)
           if (Number.isNaN(rideDateTime.getTime())) return true
           return now < rideDateTime.getTime() + 24 * 60 * 60 * 1000
-        } catch (_) {
+        } catch {
           return true
         }
       })
       const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
       const unreadByRoom = new Map<string, number>()
-      ;(unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
-        unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
-      })
+        ; (unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
+          unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
+        })
       return filtered.map((r: any) => {
         const rawRoom = r.chat_rooms?.[0] ?? null
         const expired = rawRoom?.expiry && new Date(rawRoom.expiry).getTime() <= now
@@ -86,8 +86,9 @@ export function useRides() {
     } catch (e) {
       if (e instanceof Error && e.message === 'timeout') {
         console.warn('Rides fetch timed out (e.g. after app resume)')
-        // Retry once after a delay so network/session can recover
-        if (opts?.silent && !opts?.retryAfterTimeout) {
+        // Retry once after a delay so network/session can recover.
+        // Fire for both silent and non-silent timeouts; retryAfterTimeout prevents loops.
+        if (!opts?.retryAfterTimeout) {
           setTimeout(() => fetchRef.current?.({ silent: true, retryAfterTimeout: true }), RESUME_TIMEOUT_RETRY_DELAY_MS)
         }
       } else {
@@ -116,8 +117,10 @@ export function useRides() {
   useEffect(() => {
     if (!user) return
 
+    // Re-subscribe on every app resume (appResumeKey) so channels reconnect after
+    // long backgrounds where OS closed the WebSocket connection.
     const channel = supabase
-      .channel(`rides-updates-${user.id}`)
+      .channel(`rides-updates-${user.id}-${appResumeKey}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -137,7 +140,7 @@ export function useRides() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user])
+  }, [user, appResumeKey])
 
   const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])
   return { rides, loading, refetch: fetch, refetchSilent, setRides }
@@ -149,7 +152,7 @@ export function useChatRooms() {
   const { user, appResumeKey } = useAuth()
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [loading, setLoading] = useState(true)
-  const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => {})
+  const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => { })
   const isResumingRef = useRef(false)
   const fetchInFlightRef = useRef(false)
 
@@ -165,7 +168,7 @@ export function useChatRooms() {
       setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT_MS)
     )
     const doFetch = async (): Promise<ChatRoom[]> => {
-      void Promise.resolve(supabase.rpc('delete_expired_chat_rooms')).catch(() => {})
+      void Promise.resolve(supabase.rpc('delete_expired_chat_rooms')).catch(() => { })
       const nowIso = new Date().toISOString()
       const { data } = await supabase
         .from('chat_rooms')
@@ -181,9 +184,9 @@ export function useChatRooms() {
       )
       const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
       const unreadByRoom = new Map<string, number>()
-      ;(unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
-        unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
-      })
+        ; (unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
+          unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
+        })
       return myRooms.map((r: any) => ({
         ...r,
         unread_count: unreadByRoom.get(r.id) ?? 0,
@@ -195,7 +198,9 @@ export function useChatRooms() {
     } catch (e) {
       if (e instanceof Error && e.message === 'timeout') {
         console.warn('Chat rooms fetch timed out (e.g. after app resume)')
-        if (opts?.silent && !opts?.retryAfterTimeout) {
+        // Retry once after a delay so network/session can recover.
+        // Fire for both silent and non-silent timeouts; retryAfterTimeout prevents loops.
+        if (!opts?.retryAfterTimeout) {
           setTimeout(() => fetchRef.current?.({ silent: true, retryAfterTimeout: true }), RESUME_TIMEOUT_RETRY_DELAY_MS)
         }
       } else {
@@ -223,11 +228,12 @@ export function useChatRooms() {
 
   // Realtime: new messages, new rooms, or added as participant → refetch list
   // Use ref so callback always runs latest fetch (avoids stale closure, e.g. on iOS)
+  // Re-subscribe on every app resume (appResumeKey) so channels reconnect after long backgrounds.
   useEffect(() => {
     if (!user) return
 
     const channel = supabase
-      .channel(`chat-list-${user.id}`)
+      .channel(`chat-list-${user.id}-${appResumeKey}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -247,7 +253,7 @@ export function useChatRooms() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user])
+  }, [user, appResumeKey])
 
   const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])
   return { rooms, loading, refetch: fetch, refetchSilent, setRooms }
@@ -258,7 +264,7 @@ export function useChatRooms() {
 // Refetches when screen gains focus and when app returns to foreground so data stays fresh after backgrounding.
 
 export function useMessages(roomId: string) {
-  const { user } = useAuth()
+  const { user, appResumeKey } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -289,9 +295,10 @@ export function useMessages(roomId: string) {
 
     fetchMessages()
 
-    // Realtime subscription (new channel per roomId; cleanup on unmount or roomId change)
+    // Realtime subscription (new channel per roomId; cleanup on unmount or roomId change).
+    // Re-subscribe on every app resume (appResumeKey) so channels reconnect after long backgrounds.
     const channel = supabase
-      .channel(`messages:${roomId}`)
+      .channel(`messages:${roomId}:${appResumeKey}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -309,7 +316,7 @@ export function useMessages(roomId: string) {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [roomId, fetchMessages])
+  }, [roomId, fetchMessages, appResumeKey])
 
   // When app returns to foreground, refetch messages so we recover from disconnected realtime
   useEffect(() => {

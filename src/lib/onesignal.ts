@@ -14,7 +14,8 @@ const isExpoGo = Constants.appOwnership === 'expo'
 let OneSignal: typeof import('react-native-onesignal').OneSignal | null = null
 if (!isExpoGo && (Platform.OS === 'ios' || Platform.OS === 'android')) {
   try {
-    OneSignal = require('react-native-onesignal').OneSignal
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    OneSignal = (require('react-native-onesignal') as typeof import('react-native-onesignal')).OneSignal
   } catch {
     // native module not available
   }

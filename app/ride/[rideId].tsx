@@ -6,9 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
 import { useAuth } from '../../src/lib/AuthContext'
 import { supabase, Ride } from '../../src/lib/supabase'
-import { Avatar, AvatarStack, CountdownBadge, Card } from '../../src/components/ui'
-import { RouteMap, ElevationProfile } from '../../src/components/RouteMap'
-import { decodePolyline } from '../../src/lib/parsers/routeParsers'
+import { Avatar, CountdownBadge, Card } from '../../src/components/ui'
+import { RouteMap } from '../../src/components/RouteMap'
 import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
 import { fmtTime } from '../../src/lib/utils'
 import { ChevronLeft, MoreVertical, Pencil, Trash2, Calendar, Clock, Zap, MapPin, Map, Check, X, MessageCircle, ChevronRight } from 'lucide-react-native'
@@ -22,7 +21,7 @@ export default function RideScreen() {
   const [myRsvp, setMyRsvp] = useState<'in' | 'out' | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
-  const fetchRide = async () => {
+  const fetchRide = useCallback(async () => {
     if (!rideId) return
     const { data } = await supabase
       .from('rides')
@@ -38,15 +37,15 @@ export default function RideScreen() {
     setHeaderRefreshing(false)
     const myR = data?.rsvps?.find((r: { user_id: string }) => r.user_id === user?.id)
     setMyRsvp(myR?.status ?? null)
-  }
+  }, [rideId, user?.id])
 
-  useEffect(() => { fetchRide() }, [rideId])
+  useEffect(() => { fetchRide() }, [fetchRide])
 
   useFocusEffect(
     useCallback(() => {
       setHeaderRefreshing(true)
       fetchRide()
-    }, [rideId]),
+    }, [fetchRide]),
   )
 
   const handleRsvp = async (status: 'in' | 'out') => {

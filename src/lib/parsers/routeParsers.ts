@@ -62,7 +62,6 @@ export function parseFIT(buffer: ArrayBuffer): ParsedRoute {
       }
 
       const isDefinition = (recordHeader & 0x40) !== 0
-      const localMsgType = recordHeader & 0x0f
 
       if (isDefinition) {
         // Skip definition message: 1 reserved + 1 arch + 2 global msg num + 1 field count + n*3 fields
@@ -92,7 +91,7 @@ export function parseFIT(buffer: ArrayBuffer): ParsedRoute {
 
         // Valid coordinate range check
         if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 &&
-            potentialLat !== 0x7fffffff && potentialLon !== 0x7fffffff) {
+          potentialLat !== 0x7fffffff && potentialLon !== 0x7fffffff) {
           // Try to read altitude (field 2, stored as uint16 * 5 - 500 = metres)
           let ele: number | undefined
           if (offset + 14 <= length) {

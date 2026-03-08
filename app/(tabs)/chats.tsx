@@ -9,7 +9,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { useAuth } from '../../src/lib/AuthContext'
 import { refetchAndNotifyTabUnread } from '../../src/lib/tabUnreadStore'
 import { useRides, useChatRooms } from '../../src/hooks/useData'
-import { Avatar, AvatarStack, CountdownBadge, EmptyState, Pill, Card } from '../../src/components/ui'
+import { Avatar, AvatarStack, CountdownBadge, EmptyState, Card } from '../../src/components/ui'
 import { RouteMap } from '../../src/components/RouteMap'
 import { supabase, Ride, ChatRoom } from '../../src/lib/supabase'
 import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
@@ -19,16 +19,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { registerForPushNotifications, saveFcmToken } from '../../src/lib/notifications'
 
 export default function ChatsScreen() {
-  const { user, profile } = useAuth()
+  const { user } = useAuth()
   const { rides, loading: ridesLoading, refetch: refetchRides, refetchSilent: refetchRidesSilent } = useRides()
   const { rooms, loading: roomsLoading, refetch: refetchRooms, refetchSilent: refetchRoomsSilent } = useChatRooms()
-  const [sub, setSub] = useState<'rides' | 'general'>('rides')
   const [refreshing, setRefreshing] = useState(false)
   const scrollRef = React.useRef<ScrollView | null>(null)
   const refetchRidesRef = useRef(refetchRides)
   const refetchRoomsRef = useRef(refetchRooms)
+  const refetchRidesSilentRef = useRef(refetchRidesSilent)
+  const refetchRoomsSilentRef = useRef(refetchRoomsSilent)
   refetchRidesRef.current = refetchRides
   refetchRoomsRef.current = refetchRooms
+  refetchRidesSilentRef.current = refetchRidesSilent
+  refetchRoomsSilentRef.current = refetchRoomsSilent
 
   // Trigger native push permission prompt once after install, after home screen mounts
   useEffect(() => {
@@ -72,7 +75,9 @@ export default function ChatsScreen() {
   }, [user?.id])
 
   // Whenever the Chats tab/screen gains focus (including after returning from a chat room),
-  // refresh rides + rooms and the tab bar unread dot.
+  // refresh rides + rooms silently (no spinner) and the tab bar unread dot.
+  // Using silent variants prevents loading=true flicker and lets the in-flight guard + retry
+  // logic work correctly when the network is cold after a long background.
   useFocusEffect(
     useCallback(() => {
       let isActive = true
@@ -80,7 +85,7 @@ export default function ChatsScreen() {
       let pollId: ReturnType<typeof setInterval> | null = null
       const POLL_MS = 15000
       const run = async () => {
-        await Promise.all([refetchRidesRef.current(), refetchRoomsRef.current()])
+        await Promise.all([refetchRidesSilentRef.current(), refetchRoomsSilentRef.current()])
         if (isActive && scrollRef.current) {
           scrollRef.current.scrollTo({ y: 0, animated: true })
         }
@@ -91,8 +96,8 @@ export default function ChatsScreen() {
       }
       run()
       pollId = setInterval(() => {
-        refetchRidesRef.current()
-        refetchRoomsRef.current()
+        refetchRidesSilentRef.current()
+        refetchRoomsSilentRef.current()
         if (user?.id) refetchAndNotifyTabUnread(user.id)
       }, POLL_MS)
       return () => {
@@ -119,47 +124,47 @@ export default function ChatsScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-        <View>
-          <Text style={styles.logo}>
-            <Text style={{ color: colors.blue500 }}>Velo</Text>Chat
-          </Text>
+          <View>
+            <Text style={styles.logo}>
+              <Text style={{ color: colors.blue500 }}>Velo</Text>Chat
+            </Text>
+          </View>
         </View>
-      </View>
 
-      {/* Feed */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.feed}
-        contentContainerStyle={[styles.feedContent, initialLoading && styles.feedContentLoading]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue500} />}
-      >
-        {initialLoading
-          ? <View style={[styles.spinnerWrap, { minHeight: 280 }]}><ActivityIndicator size="large" color={colors.blue500} /></View>
-          : rides.length === 0
-            ? <EmptyState icon={<Bike size={36} color={colors.slate400} />} text="No rides posted yet" />
-            : rides.map(ride => (
-              <RideCard
-                key={ride.id}
-                ride={ride}
-                onRideDeleted={refetchRides}
-                disableChatNavigation={initialLoading}
-              />
-            ))}
-        {!initialLoading && <View style={{ height: 24 }} />}
-      </ScrollView>
+        {/* Feed */}
+        <ScrollView
+          ref={scrollRef}
+          style={styles.feed}
+          contentContainerStyle={[styles.feedContent, initialLoading && styles.feedContentLoading]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue500} />}
+        >
+          {initialLoading
+            ? <View style={[styles.spinnerWrap, { minHeight: 280 }]}><ActivityIndicator size="large" color={colors.blue500} /></View>
+            : rides.length === 0
+              ? <EmptyState icon={<Bike size={36} color={colors.slate400} />} text="No rides posted yet" />
+              : rides.map(ride => (
+                <RideCard
+                  key={ride.id}
+                  ride={ride}
+                  onRideDeleted={refetchRides}
+                  disableChatNavigation={initialLoading}
+                />
+              ))}
+          {!initialLoading && <View style={{ height: 24 }} />}
+        </ScrollView>
 
-      {/* Floating Post button */}
-      <TouchableOpacity
-        style={styles.fab}
-        activeOpacity={1}
-        onPress={() => router.push('/new-ride')}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Plus size={18} color={colors.white} />
-          <Text style={styles.postBtnText}>Post Ride</Text>
-        </View>
-      </TouchableOpacity>
+        {/* Floating Post button */}
+        <TouchableOpacity
+          style={styles.fab}
+          activeOpacity={1}
+          onPress={() => router.push('/new-ride')}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Plus size={18} color={colors.white} />
+            <Text style={styles.postBtnText}>Post Ride</Text>
+          </View>
+        </TouchableOpacity>
       </SafeAreaView>
     </LinearGradient>
   )
@@ -322,17 +327,17 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
 
         const participantIds = new Set<string>()
         participantIds.add(user.id)
-        ;(ride.rsvps ?? []).forEach(r => {
-          if (r.user_id) participantIds.add(r.user_id)
-        })
+          ; (ride.rsvps ?? []).forEach(r => {
+            if (r.user_id) participantIds.add(r.user_id)
+          })
         if (ride.club_id) {
           const { data: clubMembers } = await supabase
             .from('club_members')
             .select('user_id')
             .eq('club_id', ride.club_id)
-          ;(clubMembers ?? []).forEach(m => {
-            if (m.user_id) participantIds.add(m.user_id)
-          })
+            ; (clubMembers ?? []).forEach(m => {
+              if (m.user_id) participantIds.add(m.user_id)
+            })
         }
         const participantsPayload = Array.from(participantIds).map(id => ({
           room_id: room.id,
@@ -606,7 +611,7 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
 
 // ─── Chat Room Card ───────────────────────────────────────────
 
-function ChatRoomCard({ room }: { room: ChatRoom }) {
+export function ChatRoomCard({ room }: { room: ChatRoom }) {
   const { user } = useAuth()
   const participantInitials = (room.participants ?? []).map(p => p.avatar_initials)
   const lastSenderName = room.last_message
@@ -797,7 +802,7 @@ const styles = StyleSheet.create({
   rsvpDrawerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    
+
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
@@ -821,25 +826,25 @@ const styles = StyleSheet.create({
   },
   rsvpDrawerContent: {
     padding: spacing.lg,
-    
+
     gap: 10,
   },
   rsvpDrawerEmpty: {
     fontSize: fontSize.sm,
     color: colors.slate400,
-    
+
   },
   rsvpDrawerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    
+
     gap: 10,
     paddingVertical: 8,
   },
   rsvpDrawerInfo: {
     flex: 1,
-    
-    
+
+
   },
   rsvpDrawerName: {
     fontSize: fontSize.base,

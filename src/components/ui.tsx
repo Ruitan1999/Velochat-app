@@ -4,7 +4,7 @@ import {
   StyleSheet, ViewStyle, TextStyle, Image,
 } from 'react-native'
 import { Timer } from 'lucide-react-native'
-import { colors, radius, fontSize, fontWeight, spacing, shadow, getAvatarColor } from '../lib/theme'
+import { colors, radius, fontSize, fontWeight, shadow, getAvatarColor } from '../lib/theme'
 
 // ─── Avatar ───────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ export function Avatar({
     setImageError(false)
     setImageLoaded(false)
     if (effectiveUri) {
-      void Image.prefetch(effectiveUri).catch(() => {})
+      void Image.prefetch(effectiveUri).catch(() => { })
     }
   }, [effectiveUri])
 

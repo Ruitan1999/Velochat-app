@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useFocusEffect } from 'expo-router'
@@ -38,7 +38,7 @@ export default function NewChatScreen() {
     if (!selectedClub && myClubs.length > 0) {
       setSelectedClub(myClubs[0].id)
     }
-  }, [myClubs])
+  }, [myClubs, selectedClub])
 
   const toggleRider = (id: string) =>
     setSelectedRiders(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id])
@@ -96,63 +96,63 @@ export default function NewChatScreen() {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Room Name *</Text>
-        <TextInput style={styles.input} placeholder="e.g. Kit & Gear Talk" placeholderTextColor={colors.slate400} value={title} onChangeText={setTitle} />
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.label}>Room Name *</Text>
+          <TextInput style={styles.input} placeholder="e.g. Kit & Gear Talk" placeholderTextColor={colors.slate400} value={title} onChangeText={setTitle} />
 
-        <Text style={styles.label}>Description (optional)</Text>
-        <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top', paddingTop: 12 }]} placeholder="What's this room about?" placeholderTextColor={colors.slate400} value={description} onChangeText={setDescription} multiline />
+          <Text style={styles.label}>Description (optional)</Text>
+          <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top', paddingTop: 12 }]} placeholder="What's this room about?" placeholderTextColor={colors.slate400} value={description} onChangeText={setDescription} multiline />
 
-        <Text style={styles.label}>Invite</Text>
-        <View style={styles.inviteToggle}>
-          {[{ key: 'club', label: 'Whole Club' }, { key: 'riders', label: 'Specific Riders' }].map(opt => (
+          <Text style={styles.label}>Invite</Text>
+          <View style={styles.inviteToggle}>
+            {[{ key: 'club', label: 'Whole Club' }, { key: 'riders', label: 'Specific Riders' }].map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.inviteBtn, inviteType === opt.key && styles.inviteBtnActive]}
+                onPress={() => setInviteType(opt.key as 'club' | 'riders')}
+              >
+                <Text style={[styles.inviteBtnText, inviteType === opt.key && styles.inviteBtnTextActive]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {inviteType === 'club' && myClubs.map(c => (
             <TouchableOpacity
-              key={opt.key}
-              style={[styles.inviteBtn, inviteType === opt.key && styles.inviteBtnActive]}
-              onPress={() => setInviteType(opt.key as 'club' | 'riders')}
+              key={c.id}
+              style={[styles.selectable, selectedClub === c.id && styles.selectableActive]}
+              onPress={() => setSelectedClub(c.id)}
             >
-              <Text style={[styles.inviteBtnText, inviteType === opt.key && styles.inviteBtnTextActive]}>{opt.label}</Text>
+              <Avatar initials={c.avatar_initials} color={c.color} size="sm" />
+              <Text style={[styles.selectableText, selectedClub === c.id && { color: colors.blue700 }]}>{c.name}</Text>
+              {selectedClub === c.id && <Check size={16} color={colors.blue500} />}
             </TouchableOpacity>
           ))}
+
+          {inviteType === 'riders' && riders.map(r => (
+            <TouchableOpacity
+              key={r.id}
+              style={[styles.selectable, selectedRiders.includes(r.id) && styles.selectableActive]}
+              onPress={() => toggleRider(r.id)}
+            >
+              <Avatar
+                initials={r.avatar_initials}
+                color={r.avatar_color}
+                uri={r.avatar_url}
+                size="sm"
+              />
+              <Text style={[styles.selectableText, selectedRiders.includes(r.id) && { color: colors.blue700 }]}>{r.id === user?.id ? 'You' : r.name}</Text>
+              {selectedRiders.includes(r.id) && <Check size={16} color={colors.blue500} />}
+            </TouchableOpacity>
+          ))}
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <Button onPress={handleCreate} disabled={!title.trim()} loading={loading}>
+            Start Chat Room
+          </Button>
         </View>
-
-        {inviteType === 'club' && myClubs.map(c => (
-          <TouchableOpacity
-            key={c.id}
-            style={[styles.selectable, selectedClub === c.id && styles.selectableActive]}
-            onPress={() => setSelectedClub(c.id)}
-          >
-            <Avatar initials={c.avatar_initials} color={c.color} size="sm" />
-            <Text style={[styles.selectableText, selectedClub === c.id && { color: colors.blue700 }]}>{c.name}</Text>
-            {selectedClub === c.id && <Check size={16} color={colors.blue500} />}
-          </TouchableOpacity>
-        ))}
-
-        {inviteType === 'riders' && riders.map(r => (
-          <TouchableOpacity
-            key={r.id}
-            style={[styles.selectable, selectedRiders.includes(r.id) && styles.selectableActive]}
-            onPress={() => toggleRider(r.id)}
-          >
-            <Avatar
-              initials={r.avatar_initials}
-              color={r.avatar_color}
-              uri={r.avatar_url}
-              size="sm"
-            />
-            <Text style={[styles.selectableText, selectedRiders.includes(r.id) && { color: colors.blue700 }]}>{r.id === user?.id ? 'You' : r.name}</Text>
-            {selectedRiders.includes(r.id) && <Check size={16} color={colors.blue500} />}
-          </TouchableOpacity>
-        ))}
-
-        <View style={{ height: 24 }} />
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Button onPress={handleCreate} disabled={!title.trim()} loading={loading}>
-          Start Chat Room
-        </Button>
-      </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   )

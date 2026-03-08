@@ -1,19 +1,19 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Modal, Alert, ActivityIndicator,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, router } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
-const { decode } = require('base64-arraybuffer')
 import * as FileSystem from 'expo-file-system/legacy'
+import { decode } from 'base64-arraybuffer'
 import { useAuth } from '../../src/lib/AuthContext'
 import { useRides, useClubs, useRiders } from '../../src/hooks/useData'
 import { supabase, Club, Profile } from '../../src/lib/supabase'
 import { RideCard } from '../(tabs)/chats'
 import { Avatar, Pill, Card, Button } from '../../src/components/ui'
-import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
-import { ChevronLeft, Shield, Users, X as XIcon, Bike, UserPlus, MoreVertical, Pencil, Trash2, Camera } from 'lucide-react-native'
+import { colors, spacing, fontSize, fontWeight, radius } from '../../src/lib/theme'
+import { ChevronLeft, Shield, Users, X as XIcon, Bike, MoreVertical, Pencil, Trash2, Camera } from 'lucide-react-native'
 
 const CLUB_COLORS = [
   '#3B82F6', '#7C3AED', '#059669', '#DC2626', '#D97706', '#0891B2',
@@ -63,7 +63,7 @@ export default function ClubScreen() {
     return () => { cancelled = true }
   }, [search])
 
-  const fetchClub = async () => {
+  const fetchClub = useCallback(async () => {
     if (!normalizedClubId) return
     const { data } = await supabase
       .from('clubs')
@@ -71,9 +71,9 @@ export default function ClubScreen() {
       .eq('id', normalizedClubId)
       .single()
     setClub(data)
-  }
+  }, [normalizedClubId])
 
-  useEffect(() => { fetchClub() }, [clubId])
+  useEffect(() => { fetchClub() }, [fetchClub])
 
   if (!club) {
     return (

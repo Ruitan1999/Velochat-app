@@ -1,7 +1,6 @@
 import React from 'react'
-import { View, Text, StyleSheet, FlatList } from 'react-native'
+import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { TouchableOpacity } from 'react-native'
 import { router } from 'expo-router'
 import { colors, spacing, fontSize, fontWeight, radius } from '../src/lib/theme'
 import { useChatRooms } from '../src/hooks/useData'

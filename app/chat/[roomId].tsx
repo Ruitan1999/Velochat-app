@@ -2,25 +2,25 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, Alert,
-  Keyboard, Pressable, Modal, Animated, ActivityIndicator, Image,
+  Keyboard, Pressable, Modal, ActivityIndicator, Image,
   Dimensions, AppState,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
+import * as ImagePicker from 'expo-image-picker'
 import { useAuth } from '../../src/lib/AuthContext'
 import { useMessages } from '../../src/hooks/useData'
 import { supabase, ChatRoom, Message } from '../../src/lib/supabase'
-
-type ChatRoomWithClub = ChatRoom & {
-  club?: { id: string; name: string; avatar_url?: string | null; avatar_initials?: string; color?: string } | null
-}
-type ChatAvatarStackItem = { initials: string; color?: string; uri?: string | null }
 import { Avatar, AvatarStack } from '../../src/components/ui'
 import { RouteMap } from '../../src/components/RouteMap'
 import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
 import { fmtMessageTime, fmtTime } from '../../src/lib/utils'
 import { ChevronLeft, MoreVertical, Pencil, Trash2, MessageCircle, Send, Paperclip, X } from 'lucide-react-native'
-import * as ImagePicker from 'expo-image-picker'
+
+type ChatRoomWithClub = ChatRoom & {
+  club?: { id: string; name: string; avatar_url?: string | null; avatar_initials?: string; color?: string } | null
+}
+type ChatAvatarStackItem = { initials: string; color?: string; uri?: string | null }
 
 // On iOS, custom fonts (e.g. Inter) don't include emoji; use system font so emoji render.
 const iosEmojiFont = Platform.OS === 'ios' ? { fontFamily: 'System' as const } : {}
@@ -44,7 +44,7 @@ export default function ChatScreen() {
   const { roomId: roomIdParam } = useLocalSearchParams<{ roomId: string | string[] }>()
   const rawRoomId = typeof roomIdParam === 'string' ? roomIdParam : roomIdParam?.[0]
   const roomId = typeof rawRoomId === 'string' && rawRoomId.trim() ? rawRoomId.trim() : undefined
-  const { user, profile, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth()
 
   // Invalid or missing roomId (e.g. from old notification with lost payload) → go back or to chats
   useEffect(() => {
@@ -180,7 +180,7 @@ export default function ChatScreen() {
       setRideDetail(null)
       setRideInAvatars([])
     }
-  }, [roomId, user])
+  }, [roomId, user, room])
 
   const refetchRideRsvps = useCallback(async (rideId: string) => {
     const { data } = await supabase
@@ -231,9 +231,9 @@ export default function ChatScreen() {
       const appStateSub = AppState.addEventListener('change', (state) => {
         if (!roomId || !user) return
         if (state === 'background') {
-          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => {})
+          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => { })
         } else if (state === 'active') {
-          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: true }).then(() => {})
+          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: true }).then(() => { })
         }
       })
 
@@ -241,7 +241,7 @@ export default function ChatScreen() {
         appStateSub.remove()
         // Mark the user as no longer viewing so they receive push notifications again
         if (roomId && user) {
-          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => {})
+          supabase.rpc('set_chat_participant_active', { p_room_id: roomId, p_active: false }).then(() => { })
         }
       }
     }, [loadRoom, refetchMessages, roomId, user]),
@@ -412,7 +412,7 @@ export default function ChatScreen() {
         onRequestClose={() => setFullScreenImageUri(null)}
       >
         <Pressable style={styles.fullScreenImageOverlay} onPress={() => setFullScreenImageUri(null)}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => {}}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { }}>
             <Image
               source={{ uri: fullScreenImageUri ?? '' }}
               style={[styles.fullScreenImage, { width: screenWidth, height: screenHeight }]}

@@ -34,7 +34,7 @@ const TIME_PRESETS = [
 ]
 
 export default function NewRideScreen() {
-  const { user, profile, refreshProfile } = useAuth()
+  const { user, refreshProfile } = useAuth()
   const { clubs, refetch: refetchClubs } = useClubs()
   const { riders, isFriend, refetch: refetchRiders } = useRiders()
   const myClubs = clubs.filter(c => c.is_member)
@@ -104,7 +104,7 @@ export default function NewRideScreen() {
     if (!selectedClub && myClubs.length > 0) {
       setSelectedClub(myClubs[0].id)
     }
-  }, [myClubs])
+  }, [myClubs, selectedClub])
 
   // If user is in a club and has rider friends, auto preselect
   // the first friend in the "Specific Riders" list once.
@@ -248,180 +248,180 @@ export default function NewRideScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
-        {/* Title */}
-        <Text style={styles.label}>Ride Name *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Dawn Patrol"
-          placeholderTextColor={colors.slate400}
-          value={title}
-          onChangeText={setTitle}
-        />
-
-        {/* Location */}
-        <Text style={styles.label}>Location (optional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Eastside Loop"
-          placeholderTextColor={colors.slate400}
-          value={location}
-          onChangeText={setLocation}
-        />
-
-        {/* Date */}
-        <Text style={styles.label}>Date *</Text>
-        <View style={styles.optionGrid}>
-          {dateOptions.map(opt => (
-            <TouchableOpacity
-              key={opt.key}
-              style={[styles.optionBtn, dateChoice === opt.key && styles.optionBtnActive]}
-              onPress={() => setDateChoice(opt.key as typeof dateChoice)}
-            >
-              <Text style={[styles.optionLabel, dateChoice === opt.key && styles.optionLabelActive]}>{opt.label}</Text>
-              <Text style={[styles.optionSub, dateChoice === opt.key && styles.optionSubActive]}>{opt.sub}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {dateChoice === 'custom' && (
-          <TouchableOpacity
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
+          {/* Title */}
+          <Text style={styles.label}>Ride Name *</Text>
+          <TextInput
             style={styles.input}
-            onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.inputText}>{fmt(customDateValue)}</Text>
-          </TouchableOpacity>
-        )}
-        {showDatePicker && (
-          <DateTimePicker
-            value={customDateValue}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            minimumDate={new Date()}
-            onChange={(_, selectedDate) => {
-              if (Platform.OS === 'android') setShowDatePicker(false)
-              if (selectedDate) setCustomDateValue(selectedDate)
-            }}
+            placeholder="e.g. Dawn Patrol"
+            placeholderTextColor={colors.slate400}
+            value={title}
+            onChangeText={setTitle}
           />
-        )}
-        {showDatePicker && Platform.OS === 'ios' && (
-          <View style={styles.pickerActions}>
-            <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-              <Text style={styles.pickerActionText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
-        {/* Time */}
-        <Text style={styles.label}>Start Time *</Text>
-        <View style={styles.timeGrid}>
-          {TIME_PRESETS.map(opt => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[styles.timeBtn, timeChoice === opt.value && styles.optionBtnActive]}
-              onPress={() => setTimeChoice(opt.value)}
-            >
-              <Text style={[styles.timeBtnText, timeChoice === opt.value && styles.optionLabelActive]}>{opt.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {timeChoice === 'custom' && (
-          <>
+          {/* Location */}
+          <Text style={styles.label}>Location (optional)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Eastside Loop"
+            placeholderTextColor={colors.slate400}
+            value={location}
+            onChangeText={setLocation}
+          />
+
+          {/* Date */}
+          <Text style={styles.label}>Date *</Text>
+          <View style={styles.optionGrid}>
+            {dateOptions.map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.optionBtn, dateChoice === opt.key && styles.optionBtnActive]}
+                onPress={() => setDateChoice(opt.key as typeof dateChoice)}
+              >
+                <Text style={[styles.optionLabel, dateChoice === opt.key && styles.optionLabelActive]}>{opt.label}</Text>
+                <Text style={[styles.optionSub, dateChoice === opt.key && styles.optionSubActive]}>{opt.sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {dateChoice === 'custom' && (
             <TouchableOpacity
               style={styles.input}
-              onPress={() => setShowTimePicker(true)}
+              onPress={() => setShowDatePicker(true)}
               activeOpacity={0.8}
             >
-              <Text style={styles.inputText}>
-                {customTimeValue.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })}
-              </Text>
+              <Text style={styles.inputText}>{fmt(customDateValue)}</Text>
             </TouchableOpacity>
-            {showTimePicker && (
-              <DateTimePicker
-                value={customTimeValue}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                is24Hour={false}
-                onChange={(_, selectedDate) => {
-                  if (Platform.OS === 'android') setShowTimePicker(false)
-                  if (selectedDate) setCustomTimeValue(selectedDate)
-                }}
-              />
-            )}
-            {showTimePicker && Platform.OS === 'ios' && (
-              <View style={styles.pickerActions}>
-                <TouchableOpacity onPress={() => setShowTimePicker(false)}>
-                  <Text style={styles.pickerActionText}>Done</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        )}
+          )}
+          {showDatePicker && (
+            <DateTimePicker
+              value={customDateValue}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              minimumDate={new Date()}
+              onChange={(_, selectedDate) => {
+                if (Platform.OS === 'android') setShowDatePicker(false)
+                if (selectedDate) setCustomDateValue(selectedDate)
+              }}
+            />
+          )}
+          {showDatePicker && Platform.OS === 'ios' && (
+            <View style={styles.pickerActions}>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.pickerActionText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-        {/* Invite */}
-        <Text style={[styles.label, { marginTop: 20 }]}>Invite</Text>
-        <View style={styles.inviteToggle}>
-          {[{ key: 'club', label: 'Whole Club' }, { key: 'riders', label: 'Specific Riders' }].map(opt => (
+          {/* Time */}
+          <Text style={styles.label}>Start Time *</Text>
+          <View style={styles.timeGrid}>
+            {TIME_PRESETS.map(opt => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.timeBtn, timeChoice === opt.value && styles.optionBtnActive]}
+                onPress={() => setTimeChoice(opt.value)}
+              >
+                <Text style={[styles.timeBtnText, timeChoice === opt.value && styles.optionLabelActive]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {timeChoice === 'custom' && (
+            <>
+              <TouchableOpacity
+                style={styles.input}
+                onPress={() => setShowTimePicker(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.inputText}>
+                  {customTimeValue.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                </Text>
+              </TouchableOpacity>
+              {showTimePicker && (
+                <DateTimePicker
+                  value={customTimeValue}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  is24Hour={false}
+                  onChange={(_, selectedDate) => {
+                    if (Platform.OS === 'android') setShowTimePicker(false)
+                    if (selectedDate) setCustomTimeValue(selectedDate)
+                  }}
+                />
+              )}
+              {showTimePicker && Platform.OS === 'ios' && (
+                <View style={styles.pickerActions}>
+                  <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                    <Text style={styles.pickerActionText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
+          {/* Invite */}
+          <Text style={[styles.label, { marginTop: 20 }]}>Invite</Text>
+          <View style={styles.inviteToggle}>
+            {[{ key: 'club', label: 'Whole Club' }, { key: 'riders', label: 'Specific Riders' }].map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.inviteBtn, inviteType === opt.key && styles.inviteBtnActive]}
+                onPress={() => setInviteType(opt.key as 'club' | 'riders')}
+              >
+                <Text style={[styles.inviteBtnText, inviteType === opt.key && styles.inviteBtnTextActive]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {inviteType === 'club' && myClubs.map(c => (
             <TouchableOpacity
-              key={opt.key}
-              style={[styles.inviteBtn, inviteType === opt.key && styles.inviteBtnActive]}
-              onPress={() => setInviteType(opt.key as 'club' | 'riders')}
+              key={c.id}
+              style={[styles.selectable, selectedClub === c.id && styles.selectableActive]}
+              onPress={() => setSelectedClub(c.id)}
             >
-              <Text style={[styles.inviteBtnText, inviteType === opt.key && styles.inviteBtnTextActive]}>{opt.label}</Text>
+              <Avatar initials={c.avatar_initials} color={c.color} size="sm" uri={c.avatar_url} />
+              <Text style={[styles.selectableText, selectedClub === c.id && { color: colors.blue700 }]}>{c.name}</Text>
+              {selectedClub === c.id && <Check size={16} color={colors.blue500} />}
             </TouchableOpacity>
           ))}
+
+          {inviteType === 'riders' && riders.map(r => (
+            <TouchableOpacity
+              key={r.id}
+              style={[styles.selectable, selectedRiders.includes(r.id) && styles.selectableActive]}
+              onPress={() => toggleRider(r.id)}
+            >
+              <Avatar
+                initials={r.avatar_initials}
+                color={r.avatar_color}
+                uri={r.avatar_url}
+                size="sm"
+              />
+              <Text style={[styles.selectableText, selectedRiders.includes(r.id) && { color: colors.blue700 }]}>{r.id === user?.id ? 'You' : r.name}</Text>
+              {selectedRiders.includes(r.id) && <Check size={16} color={colors.blue500} />}
+            </TouchableOpacity>
+          ))}
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <TouchableOpacity activeOpacity={0.9} onPress={handlePostPress} style={!canPost ? { opacity: 0.7 } : undefined}>
+            <Button disabled={!canPost} onPress={handlePostPress} loading={loading}>
+              Post Ride
+            </Button>
+          </TouchableOpacity>
         </View>
 
-        {inviteType === 'club' && myClubs.map(c => (
-          <TouchableOpacity
-            key={c.id}
-            style={[styles.selectable, selectedClub === c.id && styles.selectableActive]}
-            onPress={() => setSelectedClub(c.id)}
+        {showSnackbar && (
+          <Animated.View
+            style={[
+              styles.snackbar,
+              { top: insets.top, transform: [{ translateY: snackbarAnim }] },
+            ]}
           >
-            <Avatar initials={c.avatar_initials} color={c.color} size="sm" uri={c.avatar_url} />
-            <Text style={[styles.selectableText, selectedClub === c.id && { color: colors.blue700 }]}>{c.name}</Text>
-            {selectedClub === c.id && <Check size={16} color={colors.blue500} />}
-          </TouchableOpacity>
-        ))}
-
-        {inviteType === 'riders' && riders.map(r => (
-          <TouchableOpacity
-            key={r.id}
-            style={[styles.selectable, selectedRiders.includes(r.id) && styles.selectableActive]}
-            onPress={() => toggleRider(r.id)}
-          >
-            <Avatar
-              initials={r.avatar_initials}
-              color={r.avatar_color}
-              uri={r.avatar_url}
-              size="sm"
-            />
-            <Text style={[styles.selectableText, selectedRiders.includes(r.id) && { color: colors.blue700 }]}>{r.id === user?.id ? 'You' : r.name}</Text>
-            {selectedRiders.includes(r.id) && <Check size={16} color={colors.blue500} />}
-          </TouchableOpacity>
-        ))}
-
-        <View style={{ height: 24 }} />
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <TouchableOpacity activeOpacity={0.9} onPress={handlePostPress} style={!canPost ? { opacity: 0.7 } : undefined}>
-          <Button disabled={!canPost} onPress={handlePostPress} loading={loading}>
-            Post Ride
-          </Button>
-        </TouchableOpacity>
-      </View>
-
-      {showSnackbar && (
-        <Animated.View
-          style={[
-            styles.snackbar,
-            { top: insets.top, transform: [{ translateY: snackbarAnim }] },
-          ]}
-        >
-          <Text style={styles.snackbarText}>Please select a club or specific rider first</Text>
-        </Animated.View>
-      )}
+            <Text style={styles.snackbarText}>Please select a club or specific rider first</Text>
+          </Animated.View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   )

@@ -6,13 +6,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useFocusEffect } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
-const { decode } = require('base64-arraybuffer')
 import * as FileSystem from 'expo-file-system/legacy'
+import { decode } from 'base64-arraybuffer'
 import { useAuth } from '../../src/lib/AuthContext'
 import { useClubs } from '../../src/hooks/useData'
 import { supabase, Club } from '../../src/lib/supabase'
-import { Avatar, Card, EmptyState, SectionLabel, Button } from '../../src/components/ui'
-import { colors, spacing, fontSize, fontWeight, radius, shadow } from '../../src/lib/theme'
+import { Avatar, Card, Button } from '../../src/components/ui'
+import { colors, spacing, fontSize, fontWeight, radius } from '../../src/lib/theme'
 import { getInitials } from '../../src/lib/utils'
 import { Shield, Users, ChevronRight, X as XIcon, Camera } from 'lucide-react-native'
 

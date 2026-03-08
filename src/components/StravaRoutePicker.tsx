@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import {
   View, Text, TouchableOpacity, FlatList, Modal,
-  StyleSheet, ActivityIndicator, Image,
+  StyleSheet, ActivityIndicator,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import {
@@ -39,7 +39,7 @@ export function StravaRoutePicker({ visible, onClose, onSelect }: StravaRoutePic
       else setRoutes(prev => [...prev, ...data])
       setHasMore(data.length === 30)
       setPage(p)
-    } catch (e) {
+    } catch {
       setError('Failed to load Strava routes. Check your connection.')
     } finally {
       setLoading(false)

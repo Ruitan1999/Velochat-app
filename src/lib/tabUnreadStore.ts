@@ -7,7 +7,7 @@
 import { supabase } from './supabase'
 
 let hasUnread = false
-const listeners: Array<() => void> = []
+const listeners: (() => void)[] = []
 
 export function getTabUnread(): boolean {
   return hasUnread

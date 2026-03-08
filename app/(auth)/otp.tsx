@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
@@ -50,7 +50,7 @@ export default function OtpScreen() {
     if (digits.length < CODE_LENGTH) attemptedCodeRef.current = null
   }
 
-  const handleVerify = async (inputCode?: string) => {
+  const handleVerify = useCallback(async (inputCode?: string) => {
     const codeToVerify = (inputCode ?? code).replace(/\D/g, '').slice(0, CODE_LENGTH)
 
     if (loading) return
@@ -116,7 +116,7 @@ export default function OtpScreen() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [code, email, flow, loading, newEmail, refreshProfile, verifyOtp])
 
   // Slightly delay auto-verify so iOS paste/autofill can finish updating the native input first.
   useEffect(() => {
@@ -125,7 +125,7 @@ export default function OtpScreen() {
       void handleVerify(code)
     }, 150)
     return () => clearTimeout(t)
-  }, [code, loading])
+  }, [code, loading, handleVerify])
 
   const handleBackToLogin = () => {
     router.replace('/(auth)/login')
@@ -165,66 +165,66 @@ export default function OtpScreen() {
         </TouchableOpacity>
         <View style={styles.inner}>
           <Text style={styles.logo}>
-          <Text style={{ color: colors.blue500 }}>Velo</Text>
-          <Text style={{ color: colors.slate900 }}>Chat</Text>
-        </Text>
+            <Text style={{ color: colors.blue500 }}>Velo</Text>
+            <Text style={{ color: colors.slate900 }}>Chat</Text>
+          </Text>
 
-        <Text style={styles.heading}>
-          {flow === 'email-change' ? 'Verify email change' : 'Check your email'}
-        </Text>
-        <Text style={styles.subheading}>
-          {flow === 'email-change'
-            ? (
-              <>
-                Enter the 8-digit code we sent to your current email{' '}
-                <Text style={styles.email}>{email}</Text>
-                . After this, we&apos;ll update your login email.
-              </>
-            )
-            : (
-              <>
-                We sent an 8-digit code to{' '}
-                <Text style={styles.email}>{email}</Text>
-              </>
-            )
-          }
-        </Text>
+          <Text style={styles.heading}>
+            {flow === 'email-change' ? 'Verify email change' : 'Check your email'}
+          </Text>
+          <Text style={styles.subheading}>
+            {flow === 'email-change'
+              ? (
+                <>
+                  Enter the 8-digit code we sent to your current email{' '}
+                  <Text style={styles.email}>{email}</Text>
+                  . After this, we&apos;ll update your login email.
+                </>
+              )
+              : (
+                <>
+                  We sent an 8-digit code to{' '}
+                  <Text style={styles.email}>{email}</Text>
+                </>
+              )
+            }
+          </Text>
 
-        <TextInput
-          ref={inputRef}
-          style={styles.input}
-          placeholder="00000000"
-          placeholderTextColor={colors.slate400}
-          value={code}
-          onChangeText={handleChange}
-          keyboardType="number-pad"
-          maxLength={CODE_LENGTH}
-          autoFocus
-          selectTextOnFocus
-          textContentType="oneTimeCode"
-          autoComplete="one-time-code"
-          textAlign="left"
-          selectionColor={colors.blue500}
-        />
-        <Text style={styles.expiryHint}>Your verification code expires in 10 minutes.</Text>
+          <TextInput
+            ref={inputRef}
+            style={styles.input}
+            placeholder="00000000"
+            placeholderTextColor={colors.slate400}
+            value={code}
+            onChangeText={handleChange}
+            keyboardType="number-pad"
+            maxLength={CODE_LENGTH}
+            autoFocus
+            selectTextOnFocus
+            textContentType="oneTimeCode"
+            autoComplete="one-time-code"
+            textAlign="left"
+            selectionColor={colors.blue500}
+          />
+          <Text style={styles.expiryHint}>Your verification code expires in 10 minutes.</Text>
 
-        <Button onPress={handleVerify} loading={loading} style={styles.submitBtn} disabled={code.length !== CODE_LENGTH}>
-          Verify
-        </Button>
+          <Button onPress={handleVerify} loading={loading} style={styles.submitBtn} disabled={code.length !== CODE_LENGTH}>
+            Verify
+          </Button>
 
-        {resendCooldown > 0 ? (
-          <Text style={styles.resendCooldown}>Resend code in {resendCooldown}s</Text>
-        ) : (
-          <TouchableOpacity onPress={handleResendCode} disabled={resendLoading} style={styles.resendLink}>
-            <Text style={styles.resendText}>{resendLoading ? 'Sending…' : 'Resend code'}</Text>
-          </TouchableOpacity>
-        )}
+          {resendCooldown > 0 ? (
+            <Text style={styles.resendCooldown}>Resend code in {resendCooldown}s</Text>
+          ) : (
+            <TouchableOpacity onPress={handleResendCode} disabled={resendLoading} style={styles.resendLink}>
+              <Text style={styles.resendText}>{resendLoading ? 'Sending…' : 'Resend code'}</Text>
+            </TouchableOpacity>
+          )}
 
-        {flow !== 'email-change' && (
-          <TouchableOpacity onPress={handleBackToLogin} style={styles.resendLink}>
-            <Text style={styles.resendText}>Wrong email? Go back and try again</Text>
-          </TouchableOpacity>
-        )}
+          {flow !== 'email-change' && (
+            <TouchableOpacity onPress={handleBackToLogin} style={styles.resendLink}>
+              <Text style={styles.resendText}>Wrong email? Go back and try again</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

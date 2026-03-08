@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { View, Text, StyleSheet, ViewStyle, Dimensions } from 'react-native'
-import Svg, { Polyline, Path, Circle, G } from 'react-native-svg'
+import Svg, { Polyline, Path, Circle } from 'react-native-svg'
 import { decodePolyline, RoutePoint } from '../lib/parsers/routeParsers'
 import { colors, fontSize, fontWeight } from '../lib/theme'
 import { Zap, ArrowUp } from 'lucide-react-native'
