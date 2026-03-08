@@ -4,7 +4,7 @@
     "slug": "velochat",
     "version": "1.0.4",
     "orientation": "portrait",
-    "icon": "./assets/velochat-splash.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",

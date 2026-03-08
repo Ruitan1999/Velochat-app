@@ -87,7 +87,7 @@ export default function NotificationsScreen() {
           <View style={styles.empty}>
             <Bell size={40} color={colors.slate300} />
             <Text style={styles.emptyTitle}>No notifications yet</Text>
-            <Text style={styles.emptyBody}>You'll see ride invites, messages, and friend requests here</Text>
+            <Text style={styles.emptyBody}>You&apos;ll see ride invites, messages, and friend requests here</Text>
           </View>
         }
       />

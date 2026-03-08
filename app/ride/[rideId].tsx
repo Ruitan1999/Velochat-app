@@ -171,7 +171,7 @@ export default function RideScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
               <Check size={16} color={myRsvp === 'in' ? colors.white : colors.slate400} />
               <Text style={[styles.rsvpText, myRsvp === 'in' ? styles.rsvpTextActive : styles.rsvpTextInactive]}>
-                I'm In · {inRiders.length}
+                I&apos;m In · {inRiders.length}
               </Text>
             </View>
           </TouchableOpacity>
@@ -182,7 +182,7 @@ export default function RideScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
               <X size={16} color={myRsvp === 'out' ? colors.white : colors.slate400} />
               <Text style={[styles.rsvpText, myRsvp === 'out' ? styles.rsvpTextActive : styles.rsvpTextInactive]}>
-                I'm Out · {outRiders.length}
+                I&apos;m Out · {outRiders.length}
               </Text>
             </View>
           </TouchableOpacity>

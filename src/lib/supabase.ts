@@ -8,6 +8,13 @@ import 'react-native-url-polyfill/auto'
 const SUPABASE_URL = 'https://hvwkcukmynnogoktyspl.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2d2tjdWtteW5ub2dva3R5c3BsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMzg1MDAsImV4cCI6MjA4NzcxNDUwMH0.mqAl7I8R__Xqr4azr4HexTOeNMF2vaB5kypipqr_j8M'
 
+// SecureStore has a ~2048 byte limit per value. Supabase session JSON often exceeds this.
+const SECURE_STORE_MAX_BYTES = 2048
+
+function getByteLength(str: string): number {
+  return new TextEncoder().encode(str).length
+}
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: {
@@ -15,18 +22,24 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         const secureValue = await SecureStore.getItemAsync(key)
         if (secureValue != null) return secureValue
         const legacyValue = await AsyncStorage.getItem(key)
-        if (legacyValue != null) {
+        if (legacyValue != null && getByteLength(legacyValue) <= SECURE_STORE_MAX_BYTES) {
           void SecureStore.setItemAsync(key, legacyValue).catch(() => {})
         }
         return legacyValue
       },
       async setItem(key: string, value: string) {
-        try {
-          await SecureStore.setItemAsync(key, value)
-          await AsyncStorage.removeItem(key)
-        } catch {
-          await AsyncStorage.setItem(key, value)
+        const useSecure = getByteLength(value) <= SECURE_STORE_MAX_BYTES
+        if (useSecure) {
+          try {
+            await SecureStore.setItemAsync(key, value)
+            await AsyncStorage.removeItem(key)
+            return
+          } catch {
+            // fall through to AsyncStorage
+          }
         }
+        await AsyncStorage.setItem(key, value)
+        await SecureStore.deleteItemAsync(key).catch(() => {})
       },
       async removeItem(key: string) {
         await Promise.allSettled([

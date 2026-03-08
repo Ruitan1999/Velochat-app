@@ -5,7 +5,10 @@ import { supabase, Profile } from '../lib/supabase'
 import { initOneSignal, setOneSignalUserId, clearOneSignalUserId } from '../lib/onesignal'
 import { getAvatarColor } from '../lib/theme'
 
-// Reconnect after background: both iOS and Android suspend/close connections when app is backgrounded
+// Reconnect after background: both iOS and Android suspend/close connections when app is backgrounded.
+// When returning from background, re-read the cached session (fast) and bump appResumeKey so data hooks refetch.
+// startAutoRefresh() handles actual token refresh in the background.
+const RESUME_SESSION_DELAY_MS = 500
 
 type AuthContextType = {
   session: Session | null
@@ -53,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [appResumeKey, setAppResumeKey] = useState(0)
   const prevStateRef = useRef<AppStateStatus>('active')
   const mountedRef = useRef(true)
+  const resumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (USE_MOCK_USER) return
@@ -107,31 +111,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     )
 
     // Official Supabase React Native pattern: stop auto-refresh in background, restart on foreground.
-    // This is more reliable than manually calling refreshSession() which can timeout before the network is ready.
+    // When returning from background, read cached session (fast) and bump appResumeKey so data hooks refetch.
+    // startAutoRefresh() handles actual token refresh in the background automatically.
     const appSub = AppState.addEventListener('change', (state: AppStateStatus) => {
       const prev = prevStateRef.current
       prevStateRef.current = state
       if (state === 'active') {
         supabase.auth.startAutoRefresh()
-        void supabase.auth.getSession().then(({ data }) => {
-          if (!mountedRef.current) return
-          if (data.session?.user) {
-            setSession(data.session)
-            setUser(data.session.user)
-            setOneSignalUserId(data.session.user.id)
-          }
-        }).catch(() => {})
+        const becameActive = prev === 'background' || prev === 'inactive'
+        if (becameActive) {
+          if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current)
+          resumeTimeoutRef.current = setTimeout(async () => {
+            resumeTimeoutRef.current = null
+            if (!mountedRef.current) return
+            try {
+              const { data } = await supabase.auth.getSession()
+              if (!mountedRef.current) return
+              if (data.session?.user) {
+                setSession(data.session)
+                setUser(data.session.user)
+                setOneSignalUserId(data.session.user.id)
+              }
+            } catch {
+              // getSession from cache shouldn't fail, but if it does just continue
+            }
+            if (mountedRef.current) setAppResumeKey(k => k + 1)
+          }, RESUME_SESSION_DELAY_MS)
+          return
+        }
       } else {
         supabase.auth.stopAutoRefresh()
       }
-      const becameActiveFromBackgroundOrInactive = state === 'active' && (prev === 'background' || prev === 'inactive')
-      if (!becameActiveFromBackgroundOrInactive) return
-      setAppResumeKey(k => k + 1)
     })
 
     return () => {
       mountedRef.current = false
       clearTimeout(timeout)
+      if (resumeTimeoutRef.current) {
+        clearTimeout(resumeTimeoutRef.current)
+        resumeTimeoutRef.current = null
+      }
       supabase.auth.stopAutoRefresh()
       subscription.unsubscribe()
       appSub.remove()

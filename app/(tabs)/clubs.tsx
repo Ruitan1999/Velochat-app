@@ -100,7 +100,7 @@ export default function ClubsScreen() {
             {myClubs.length === 0 ? (
               <View style={styles.emptyWrap}>
                 <Shield size={36} color={colors.slate300} />
-                <Text style={styles.emptyText}>You haven't joined any clubs</Text>
+                <Text style={styles.emptyText}>You haven&apos;t joined any clubs</Text>
                 <TouchableOpacity style={styles.emptyCreateBtn} onPress={() => setShowCreate(true)} activeOpacity={0.8}>
                   <Text style={styles.emptyCreateBtnText}>Create a Club</Text>
                 </TouchableOpacity>

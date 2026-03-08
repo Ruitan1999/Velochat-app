@@ -25,6 +25,10 @@ export default function ChatsScreen() {
   const [sub, setSub] = useState<'rides' | 'general'>('rides')
   const [refreshing, setRefreshing] = useState(false)
   const scrollRef = React.useRef<ScrollView | null>(null)
+  const refetchRidesRef = useRef(refetchRides)
+  const refetchRoomsRef = useRef(refetchRooms)
+  refetchRidesRef.current = refetchRides
+  refetchRoomsRef.current = refetchRooms
 
   // Trigger native push permission prompt once after install, after home screen mounts
   useEffect(() => {
@@ -74,9 +78,9 @@ export default function ChatsScreen() {
       let isActive = true
       let timeoutId: ReturnType<typeof setTimeout> | null = null
       let pollId: ReturnType<typeof setInterval> | null = null
-      const POLL_MS = 15000 // Fallback: refresh list every 15s when realtime doesn't fire (e.g. iOS)
+      const POLL_MS = 15000
       const run = async () => {
-        await Promise.all([refetchRides(), refetchRooms()])
+        await Promise.all([refetchRidesRef.current(), refetchRoomsRef.current()])
         if (isActive && scrollRef.current) {
           scrollRef.current.scrollTo({ y: 0, animated: true })
         }
@@ -87,8 +91,8 @@ export default function ChatsScreen() {
       }
       run()
       pollId = setInterval(() => {
-        refetchRides()
-        refetchRooms()
+        refetchRidesRef.current()
+        refetchRoomsRef.current()
         if (user?.id) refetchAndNotifyTabUnread(user.id)
       }, POLL_MS)
       return () => {
@@ -96,7 +100,7 @@ export default function ChatsScreen() {
         if (timeoutId != null) clearTimeout(timeoutId)
         if (pollId != null) clearInterval(pollId)
       }
-    }, [refetchRides, refetchRooms, user?.id]),
+    }, [user?.id]),
   )
 
   const onRefresh = async () => {
@@ -446,7 +450,7 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
             <Check size={14} color={isIn ? colors.white : colors.slate400} />
             <Text style={[styles.rsvpBtnText, isIn ? styles.rsvpBtnTextActive : styles.rsvpBtnTextInactive]}>
-              I'm In {inCount > 0 ? `· ${inCount}` : ''}
+              I&apos;m In {inCount > 0 ? `· ${inCount}` : ''}
             </Text>
           </View>
         </TouchableOpacity>
@@ -458,7 +462,7 @@ export function RideCard({ ride, onRideDeleted, disableChatNavigation }: { ride:
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
             <X size={14} color={isOut ? colors.white : colors.slate400} />
             <Text style={[styles.rsvpBtnText, isOut ? styles.rsvpBtnTextActive : styles.rsvpBtnTextInactive]}>
-              I'm Out {outCount > 0 ? `· ${outCount}` : ''}
+              I&apos;m Out {outCount > 0 ? `· ${outCount}` : ''}
             </Text>
           </View>
         </TouchableOpacity>

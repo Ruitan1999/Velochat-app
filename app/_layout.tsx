@@ -1,10 +1,9 @@
-import { useEffect } from 'react'
-import { Stack } from 'expo-router'
+import React, { useEffect } from 'react'
+import { Stack, router, useSegments, useRootNavigationState } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { View, ActivityIndicator } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import React from 'react'
 import { useFonts } from 'expo-font'
 import {
   Inter_400Regular,
@@ -13,7 +12,6 @@ import {
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter'
 import Constants from 'expo-constants'
-import { router, useSegments, useRootNavigationState } from 'expo-router'
 import { AuthProvider, useAuth } from '../src/lib/AuthContext'
 import { initOneSignal, setupOneSignalNotificationClick } from '../src/lib/onesignal'
 import { setupNotificationListeners } from '../src/lib/notifications'
@@ -21,7 +19,7 @@ import { colors } from '../src/lib/theme'
 
 const isExpoGo = Constants.appOwnership === 'expo'
 
-function AuthGate() {
+function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   const segments = useSegments()
   const navState = useRootNavigationState()
@@ -93,7 +91,7 @@ function AuthGate() {
     )
   }
 
-  return null
+  return <>{children}</>
 }
 
 export default function RootLayout() {
@@ -124,36 +122,37 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <AuthGate />
-          <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen
-              name="chat/[roomId]"
-              options={{ presentation: 'card', animation: 'slide_from_right' }}
-            />
-            <Stack.Screen
-              name="ride/[rideId]"
-              options={{ presentation: 'card', animation: 'slide_from_right' }}
-            />
-            <Stack.Screen
-              name="club/[clubId]"
-              options={{ presentation: 'card', animation: 'slide_from_right' }}
-            />
-            <Stack.Screen
-              name="edit-chat/[roomId]"
-              options={{ presentation: 'card', animation: 'slide_from_right' }}
-            />
-            <Stack.Screen
-              name="notifications"
-              options={{ presentation: 'card', animation: 'slide_from_right' }}
-            />
-            <Stack.Screen
-              name="delete-account"
-              options={{ presentation: 'card', animation: 'slide_from_right' }}
-            />
-          </Stack>
+          <AuthGate>
+            <StatusBar style="dark" />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="chat/[roomId]"
+                options={{ presentation: 'card', animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="ride/[rideId]"
+                options={{ presentation: 'card', animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="club/[clubId]"
+                options={{ presentation: 'card', animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="edit-chat/[roomId]"
+                options={{ presentation: 'card', animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="notifications"
+                options={{ presentation: 'card', animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="delete-account"
+                options={{ presentation: 'card', animation: 'slide_from_right' }}
+              />
+            </Stack>
+          </AuthGate>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

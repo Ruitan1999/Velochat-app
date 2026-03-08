@@ -5,8 +5,6 @@ import { useAuth } from '../lib/AuthContext'
 
 // After resume (iOS & Android), network/realtime can be cut; timeouts and delayed refetch help reconnect
 const FETCH_TIMEOUT_MS = 25000
-// Delay refetch until after AuthContext refreshSession (8s max) has had time to complete
-const RESUME_REFETCH_DELAY_MS = 4500
 const RESUME_TIMEOUT_RETRY_DELAY_MS = 4000
 
 type DataFetchOpts = { silent?: boolean; retryAfterTimeout?: boolean }
@@ -15,19 +13,21 @@ type DataFetchOpts = { silent?: boolean; retryAfterTimeout?: boolean }
 // Fetches rides visible to the current user (their clubs + invited)
 
 export function useRides() {
-  const { user } = useAuth()
+  const { user, appResumeKey } = useAuth()
   const [rides, setRides] = useState<Ride[]>([])
   const [loading, setLoading] = useState(true)
   const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => {})
-  // Gate: block realtime-triggered fetches during the resume window (network not ready yet)
   const isResumingRef = useRef(false)
+  const fetchInFlightRef = useRef(false)
 
   const fetch = useCallback(async (opts?: DataFetchOpts) => {
     if (!user) {
       setLoading(false)
       return
     }
+    if (fetchInFlightRef.current && opts?.silent) return
     if (!opts?.silent) setLoading(true)
+    fetchInFlightRef.current = true
     const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT_MS))
     const doFetch = async (): Promise<Ride[]> => {
       const { data: memberships } = await supabase
@@ -94,12 +94,24 @@ export function useRides() {
         console.warn('useRides fetch error:', e)
       }
     } finally {
-      if (!opts?.silent) setLoading(false)
+      fetchInFlightRef.current = false
+      setLoading(false)
     }
   }, [user])
 
   fetchRef.current = fetch
   useEffect(() => { fetch() }, [fetch])
+
+  // Refetch when app returns from background and session has been refreshed (appResumeKey increments after getSession).
+  useEffect(() => {
+    if (appResumeKey === 0 || !user) return
+    isResumingRef.current = true
+    fetchRef.current?.({ silent: true })
+    const t = setTimeout(() => {
+      isResumingRef.current = false
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [appResumeKey, user])
 
   useEffect(() => {
     if (!user) return
@@ -127,29 +139,6 @@ export function useRides() {
     return () => { supabase.removeChannel(channel) }
   }, [user])
 
-  // Refetch when becoming active from background or inactive (covers "leave app and return" and background→inactive→active).
-  const prevStateRef = useRef<AppStateStatus>('active')
-  useEffect(() => {
-    if (!user) return
-    let t: ReturnType<typeof setTimeout> | null = null
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      const prev = prevStateRef.current
-      prevStateRef.current = state
-      const becameActiveFromBackgroundOrInactive = state === 'active' && (prev === 'background' || prev === 'inactive')
-      if (!becameActiveFromBackgroundOrInactive) return
-      isResumingRef.current = true
-      t = setTimeout(() => {
-        t = null
-        isResumingRef.current = false
-        fetchRef.current?.({ silent: true })
-      }, RESUME_REFETCH_DELAY_MS)
-    })
-    return () => {
-      sub.remove()
-      if (t != null) clearTimeout(t)
-    }
-  }, [user])
-
   const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])
   return { rides, loading, refetch: fetch, refetchSilent, setRides }
 }
@@ -157,19 +146,21 @@ export function useRides() {
 // ─── useChatRooms ─────────────────────────────────────────────
 
 export function useChatRooms() {
-  const { user } = useAuth()
+  const { user, appResumeKey } = useAuth()
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [loading, setLoading] = useState(true)
   const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => {})
-  // Gate: block realtime-triggered fetches during the resume window (network not ready yet)
   const isResumingRef = useRef(false)
+  const fetchInFlightRef = useRef(false)
 
   const fetch = useCallback(async (opts?: DataFetchOpts) => {
     if (!user) {
       setLoading(false)
       return
     }
+    if (fetchInFlightRef.current && opts?.silent) return
     if (!opts?.silent) setLoading(true)
+    fetchInFlightRef.current = true
     const timeoutPromise = new Promise<never>((_, rej) =>
       setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT_MS)
     )
@@ -211,12 +202,24 @@ export function useChatRooms() {
         console.warn('useChatRooms fetch error:', e)
       }
     } finally {
-      if (!opts?.silent) setLoading(false)
+      fetchInFlightRef.current = false
+      setLoading(false)
     }
   }, [user])
 
   fetchRef.current = fetch
   useEffect(() => { fetch() }, [fetch])
+
+  // Refetch when app returns from background and session has been refreshed (appResumeKey increments after getSession).
+  useEffect(() => {
+    if (appResumeKey === 0 || !user) return
+    isResumingRef.current = true
+    fetchRef.current?.({ silent: true })
+    const t = setTimeout(() => {
+      isResumingRef.current = false
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [appResumeKey, user])
 
   // Realtime: new messages, new rooms, or added as participant → refetch list
   // Use ref so callback always runs latest fetch (avoids stale closure, e.g. on iOS)
@@ -244,29 +247,6 @@ export function useChatRooms() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user])
-
-  // Refetch when becoming active from background or inactive (covers "leave app and return" and background→inactive→active).
-  const prevStateRef = useRef<AppStateStatus>('active')
-  useEffect(() => {
-    if (!user) return
-    let t: ReturnType<typeof setTimeout> | null = null
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      const prev = prevStateRef.current
-      prevStateRef.current = state
-      const becameActiveFromBackgroundOrInactive = state === 'active' && (prev === 'background' || prev === 'inactive')
-      if (!becameActiveFromBackgroundOrInactive) return
-      isResumingRef.current = true
-      t = setTimeout(() => {
-        t = null
-        isResumingRef.current = false
-        fetchRef.current?.({ silent: true })
-      }, RESUME_REFETCH_DELAY_MS)
-    })
-    return () => {
-      sub.remove()
-      if (t != null) clearTimeout(t)
-    }
   }, [user])
 
   const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])

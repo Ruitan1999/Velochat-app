@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Tabs, useRootNavigationState } from 'expo-router'
 import { View, Text, StyleSheet } from 'react-native'
 import { MessageCircle, Shield, User } from 'lucide-react-native'
-import { colors, fontWeight, fontSize } from '../../src/lib/theme'
+import { colors, fontWeight } from '../../src/lib/theme'
 import { useAuth } from '../../src/lib/AuthContext'
 import { supabase } from '../../src/lib/supabase'
 import {
