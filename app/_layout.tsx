@@ -28,7 +28,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (loading || !navState?.key) return
 
     const inAuthGroup = segments[0] === '(auth)'
-    const inAuthEmailOtp = inAuthGroup && segments[1] === 'otp'
+    const inAuthEmailOtp = inAuthGroup && segments.length > 1 && segments[1] === 'otp'
 
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login')
