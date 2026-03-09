@@ -47,6 +47,15 @@ Three issues were identified and fixed in this codebase. If you see similar beha
 - **Where:** `src/hooks/useData.ts` — `useRides` and `useChatRooms` fetch functions.
 - **Pattern:** `const fetchInFlightRef = useRef(false)`. At the start of fetch: if `fetchInFlightRef.current && opts?.silent` then return; else set `fetchInFlightRef.current = true`. In `finally`, set `fetchInFlightRef.current = false` (and `setLoading(false)`).
 
+### 4. JWT Expiration and Refresh Lifecycle
+
+**Background:** By default, Supabase issues JWTs that expire after a set time (usually 3600 seconds/1 hour). Rather than manually tracking this expiration, the app handles it utilizing the Supabase client's auto-refresh capabilities safely in the background.
+
+**How it works:** 
+- `autoRefreshToken: true` is configured in `src/lib/supabase.ts`. This runs a background timer. When the JWT is close to expiring, the client automatically makes a network request using the **refresh token** to fetch a new JWT.
+- Because mobile apps are suspended when placed in the background, `AuthContext.tsx` manually pauses this timer using `supabase.auth.stopAutoRefresh()` to stop battery drain and unnecessary network errors while asleep.
+- When the app is opened and becomes active again, the app immediately calls `supabase.auth.startAutoRefresh()`. The Supabase client instantly checks the JWT's `expires_at` timestamp. If the JWT expired while the app was asleep (or is about to), it gracefully and silently requests a new JWT using the persisted refresh token. We do not need a manual `refreshSession()` call to handle this.
+
 ---
 
 ## Architecture Summary
