@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { AppState, AppStateStatus } from 'react-native'
 import { supabase, Ride, ChatRoom, Message, Club, Profile, Friendship } from '../lib/supabase'
+import { generateUUID } from '../lib/utils'
 import { useAuth } from '../lib/AuthContext'
 
 // After resume (iOS & Android), network/realtime can be cut; timeouts and delayed refetch help reconnect
@@ -282,7 +283,7 @@ export function useMessages(roomId: string) {
       setLoading(false)
       return
     }
-    setMessages((data ?? []).reverse())
+    setMessages(data ?? [])
     setLoading(false)
   }, [roomId])
 
@@ -311,7 +312,12 @@ export function useMessages(roomId: string) {
           .select('*, sender:profiles!sender_id(id, name, avatar_initials, avatar_color, avatar_url)')
           .eq('id', newId)
           .single()
-        if (msg) setMessages(prev => prev.some(m => m.id === newId) ? prev : [...prev, msg])
+        if (msg) setMessages(prev => {
+          if (prev.some(m => m.id === newId)) {
+            return prev.map(m => m.id === newId ? msg : m)
+          }
+          return [msg, ...prev]
+        })
       })
       .subscribe()
 
@@ -330,8 +336,10 @@ export function useMessages(roomId: string) {
   const sendMessage = async (text: string): Promise<{ roomDeleted?: boolean } | void> => {
     if (!user || !text.trim()) return
 
+    const messageId = generateUUID()
+
     const optimistic: Message = {
-      id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: messageId,
       room_id: roomId,
       sender_id: user.id,
       text: text.trim(),
@@ -344,9 +352,10 @@ export function useMessages(roomId: string) {
       },
     } as Message
 
-    setMessages(prev => [...prev, optimistic])
+    setMessages(prev => [optimistic, ...prev])
 
     const { data, error } = await supabase.from('messages').insert({
+      id: messageId,
       room_id: roomId,
       sender_id: user.id,
       text: text.trim(),
@@ -395,8 +404,10 @@ export function useMessages(roomId: string) {
 
     const imageUrl = urlData.publicUrl
 
+    const messageId = generateUUID()
+
     const optimistic: Message = {
-      id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: messageId,
       room_id: roomId,
       sender_id: user.id,
       text: '',
@@ -410,9 +421,10 @@ export function useMessages(roomId: string) {
       },
     } as Message
 
-    setMessages(prev => [...prev, optimistic])
+    setMessages(prev => [optimistic, ...prev])
 
     const { data, error } = await supabase.from('messages').insert({
+      id: messageId,
       room_id: roomId,
       sender_id: user.id,
       text: '',

@@ -96,7 +96,7 @@ export default function ChatScreen() {
   const loadRoom = useCallback(async () => {
     if (!roomId || !user) return
 
-    if (!room) setHeaderTitle('Loading…')
+    setHeaderTitle((prev) => prev === 'Chat' ? 'Loading…' : prev)
 
     // RLS requires user to be in chat_participants to read the room; wait for RPC (with timeout so we don't hang after resume)
     const participantReady = Promise.race([
@@ -180,7 +180,7 @@ export default function ChatScreen() {
       setRideDetail(null)
       setRideInAvatars([])
     }
-  }, [roomId, user, room])
+  }, [roomId, user])
 
   const refetchRideRsvps = useCallback(async (rideId: string) => {
     const { data } = await supabase
@@ -273,7 +273,6 @@ export default function ChatScreen() {
     setInput('')
     const result = await sendMessage(text)
     if (result?.roomDeleted) { handleRoomDeleted(); return }
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
   }
 
   const handleQuickReply = async (text: string) => {
@@ -297,7 +296,6 @@ export default function ChatScreen() {
       // Refresh RSVP avatars in message body so they update immediately
       refetchRideRsvps(room.ride_id)
     }
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
     inputRef.current?.blur()
   }
 
@@ -317,21 +315,11 @@ export default function ChatScreen() {
     setUploading(true)
     try {
       await sendImage(result.assets[0].uri)
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
     } finally {
       setUploading(false)
     }
   }
 
-  // When keyboard opens, scroll to bottom so latest messages are visible
-  useEffect(() => {
-    if (keyboardOpen) {
-      const id = setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: true })
-      }, 150)
-      return () => clearTimeout(id)
-    }
-  }, [keyboardOpen])
 
   const handleEdit = () => {
     setMenuOpen(false)
@@ -514,9 +502,6 @@ export default function ChatScreen() {
             isRide={isRide}
             listRef={listRef}
             renderMessage={renderMessage}
-            keyboardOpen={keyboardOpen}
-            isNearBottomRef={isNearBottomRef}
-            hasInitialScrolledRef={hasInitialScrolledRef}
             onMarkAsRead={markAsRead}
             lastMarkAsReadRef={lastMarkAsReadRef}
           />
@@ -566,14 +551,11 @@ type MessageListProps = {
   isRide: boolean
   listRef: React.RefObject<FlatList | null>
   renderMessage: ({ item }: { item: Message }) => React.ReactElement
-  keyboardOpen: boolean
-  isNearBottomRef: React.MutableRefObject<boolean>
-  hasInitialScrolledRef: React.MutableRefObject<boolean>
   onMarkAsRead?: () => void
   lastMarkAsReadRef?: React.MutableRefObject<number>
 }
 
-function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, rideDetail, rideInAvatars, isRide, listRef, renderMessage, keyboardOpen, isNearBottomRef, hasInitialScrolledRef, onMarkAsRead, lastMarkAsReadRef }: MessageListProps) {
+function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, rideDetail, rideInAvatars, isRide, listRef, renderMessage, onMarkAsRead, lastMarkAsReadRef }: MessageListProps) {
   const hasMeta = rideDetail?.date || rideDetail?.time || rideDetail?.location
   const metaParts: string[] = []
   if (rideDetail?.date) metaParts.push(rideDetail.date)
@@ -602,17 +584,19 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, ride
       style={styles.messageList}
       contentContainerStyle={[
         styles.messageContent,
-        { paddingBottom: keyboardOpen ? 30 : 30 },
+        { flexGrow: 1, justifyContent: 'flex-end' }
       ]}
       showsVerticalScrollIndicator={false}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
+      inverted
+      automaticallyAdjustKeyboardInsets={false}
       onScroll={(e) => {
-        const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent
-        const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y
-        const nearBottom = distanceFromBottom < 150
-        isNearBottomRef.current = nearBottom
-        if (nearBottom && onMarkAsRead && lastMarkAsReadRef) {
+        const { contentOffset } = e.nativeEvent
+        // In inverted mode, contentOffset.y = 0 means we are at the newest messages (bottom visually).
+        // Mark as read when user is viewing the latest messages.
+        const atBottom = contentOffset.y < 150
+        if (atBottom && onMarkAsRead && lastMarkAsReadRef) {
           const now = Date.now()
           if (now - lastMarkAsReadRef.current > MARK_AS_READ_THROTTLE_MS) {
             lastMarkAsReadRef.current = now
@@ -621,25 +605,7 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, ride
         }
       }}
       scrollEventThrottle={100}
-      onContentSizeChange={() => {
-        if (messages.length === 0) return
-        // On enter, scroll to latest message; with many messages FlatList reports size
-        // before all items are laid out, so run scrollToEnd several times with delays
-        if (!hasInitialScrolledRef.current) {
-          hasInitialScrolledRef.current = true
-          const scrollToEnd = () => listRef.current?.scrollToEnd({ animated: false })
-          scrollToEnd()
-          setTimeout(scrollToEnd, 100)
-          setTimeout(scrollToEnd, 300)
-          setTimeout(scrollToEnd, 600)
-          setTimeout(scrollToEnd, 1000)
-          return
-        }
-        if (isNearBottomRef.current) {
-          listRef.current?.scrollToEnd({ animated: true })
-        }
-      }}
-      ListHeaderComponent={
+      ListFooterComponent={
         <View>
           {roomExpiry ? (
             <View style={styles.expiryNotice}>
@@ -662,20 +628,22 @@ function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, ride
         </View>
       }
       ListEmptyComponent={
-        loading ? (
-          <View style={styles.emptyMessages}>
-            <ActivityIndicator size="large" color={colors.blue500} />
-            <Text style={styles.emptyMessagesLabel}>Loading messages…</Text>
-          </View>
-        ) : (
-          <View style={styles.emptyMessages}>
-            {!isRide && roomTitle ? (
-              <Text style={styles.emptyMessagesTitle} numberOfLines={2}>{roomTitle}</Text>
-            ) : null}
-            <MessageCircle size={36} color={colors.slate300} />
-            <Text style={styles.emptyMessagesLabel}>No messages yet — say something!</Text>
-          </View>
-        )
+        <View style={styles.emptyMessagesContent}>
+          {loading ? (
+            <>
+              <ActivityIndicator size="large" color={colors.blue500} />
+              <Text style={styles.emptyMessagesLabel}>Loading messages…</Text>
+            </>
+          ) : (
+            <>
+              {!isRide && roomTitle ? (
+                <Text style={styles.emptyMessagesTitle} numberOfLines={2}>{roomTitle}</Text>
+              ) : null}
+              <MessageCircle size={36} color={colors.slate300} />
+              <Text style={styles.emptyMessagesLabel}>No messages yet — say something!</Text>
+            </>
+          )}
+        </View>
       }
     />
   )
@@ -793,7 +761,6 @@ const styles = StyleSheet.create({
   messageContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
-    gap: spacing.lg,
   },
   expiryNotice: {
     alignSelf: 'center',
@@ -812,7 +779,8 @@ const styles = StyleSheet.create({
   rideMessageBody: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.lg,
+    paddingTop: 30, // 30px padding above room title
+    paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
     marginBottom: 4,
   },
@@ -832,7 +800,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
   },
-  emptyMessages: { alignItems: 'center', paddingVertical: 4, gap: 8 },
+
+  emptyMessagesContent: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
   emptyMessagesTitle: {
     fontSize: 24,
     fontWeight: fontWeight.semibold,
@@ -840,10 +813,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
     marginBottom: 16,
+    paddingTop: 30, // 30px padding for non-ride empty state headers
   },
   emptyMessagesLabel: { fontSize: fontSize.sm, color: colors.slate400 },
 
-  msgRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-end' },
+  msgRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-end', marginBottom: spacing.lg },
   msgRowMe: { flexDirection: 'row-reverse' },
   msgBubbleWrap: { maxWidth: '75%', gap: 3, alignSelf: 'flex-start' },
   msgBubbleWrapMe: { alignItems: 'flex-end', alignSelf: 'flex-end' },
