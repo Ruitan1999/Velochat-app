@@ -764,6 +764,7 @@ const styles = StyleSheet.create({
   },
   expiryNotice: {
     alignSelf: 'center',
+    marginTop: 30, // 30px margin above pill
     marginBottom: 2,
     flexDirection: 'row',
     alignItems: 'center',
