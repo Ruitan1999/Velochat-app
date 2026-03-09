@@ -132,23 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setUser(data.session.user)
                 setOneSignalUserId(data.session.user.id)
               }
-              // After a long background (30+ min), the access token may be expired.
-              // getSession() returns the cached (possibly expired) token; check and
-              // refresh once before bumping appResumeKey so data hooks get a valid token.
-              const expiry = data.session?.expires_at // unix seconds
-              const nowSec = Math.floor(Date.now() / 1000)
-              const isExpired = !expiry || expiry <= nowSec + 30 // 30 s buffer
-              if (isExpired && data.session) {
-                try {
-                  const { data: refreshed } = await supabase.auth.refreshSession()
-                  if (refreshed.session && mountedRef.current) {
-                    setSession(refreshed.session)
-                    setUser(refreshed.session.user)
-                  }
-                } catch {
-                  // refresh failed — continue; hooks will retry or show stale data
-                }
-              }
+
             } catch {
               // getSession from cache shouldn't fail, but if it does just continue
             }
