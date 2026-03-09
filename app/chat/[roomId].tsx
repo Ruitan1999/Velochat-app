@@ -70,6 +70,7 @@ export default function ChatScreen() {
   const isNearBottomRef = useRef(true)
   const lastMarkAsReadRef = useRef(0)
   const roomNotFoundAlertedRef = useRef(false)
+
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window')
   const insets = useSafeAreaInsets()
 
@@ -223,7 +224,6 @@ export default function ChatScreen() {
   useFocusEffect(
     useCallback(() => {
       loadRoom()
-      // Refetch messages when entering room (e.g. from notification or after app was backgrounded)
       refetchMessages()
 
       // When the app goes to background while the user is still on this screen,
@@ -558,6 +558,7 @@ type MessageListProps = {
 function MessageList({ messages, loading, roomTitle, roomExpiry, rideRoute, rideDetail, rideInAvatars, isRide, listRef, renderMessage, onMarkAsRead, lastMarkAsReadRef }: MessageListProps) {
   const hasMeta = rideDetail?.date || rideDetail?.time || rideDetail?.location
   const metaParts: string[] = []
+
   if (rideDetail?.date) metaParts.push(rideDetail.date)
   if (rideDetail?.time) metaParts.push(fmtTime(rideDetail.time))
   if (rideDetail?.location) metaParts.push(rideDetail.location)

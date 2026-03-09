@@ -164,7 +164,7 @@ export default function OtpScreen() {
           <ChevronLeft size={28} color={colors.slate700} />
         </TouchableOpacity>
         <View style={styles.inner}>
-          <Text style={styles.logo}>
+          <Text style={[styles.logo, Platform.OS === 'ios' && { paddingTop: 10 }]}>
             <Text style={{ color: colors.blue500 }}>Velo</Text>
             <Text style={{ color: colors.slate900 }}>Chat</Text>
           </Text>
@@ -216,7 +216,7 @@ export default function OtpScreen() {
             <Text style={styles.resendCooldown}>Resend code in {resendCooldown}s</Text>
           ) : (
             <TouchableOpacity onPress={handleResendCode} disabled={resendLoading} style={styles.resendLink}>
-              <Text style={styles.resendText}>{resendLoading ? 'Sending…' : 'Resend code'}</Text>
+              <Text style={styles.resendText} >{resendLoading ? 'Sending…' : 'Resend code'}</Text>
             </TouchableOpacity>
           )}
 

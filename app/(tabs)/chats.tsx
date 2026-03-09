@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Pressable,
-  RefreshControl, AppState, Alert, Modal, ActivityIndicator,
+  RefreshControl, AppState, Alert, Modal, ActivityIndicator, Platform,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -123,7 +123,7 @@ export default function ChatsScreen() {
     >
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, Platform.OS === 'ios' && { paddingTop: spacing.lg + 10 }]}>
           <View>
             <Text style={styles.logo}>
               <Text style={{ color: colors.blue500 }}>Velo</Text>Chat

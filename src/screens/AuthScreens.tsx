@@ -53,7 +53,7 @@ export function LoginScreen() {
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-        <Text style={styles.logo}>
+        <Text style={[styles.logo, Platform.OS === 'ios' && { paddingTop: 30 }]}>
           <Text style={{ color: colors.blue500 }}>Velo</Text>
           <Text style={{ color: colors.slate900 }}>Chat</Text>
         </Text>
@@ -146,63 +146,63 @@ export function SignUpScreen() {
           <ChevronLeft size={28} color={colors.slate700} />
         </TouchableOpacity>
         <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-          <Text style={styles.logo}>
+          <Text style={[styles.logo, Platform.OS === 'ios' && { paddingTop: 30 }]}>
             <Text style={{ color: colors.blue500 }}>Velo</Text>
             <Text style={{ color: colors.slate900 }}>Chat</Text>
           </Text>
 
           <Text style={styles.heading}>Create account</Text>
-        <Text style={styles.subheading}>Name and email, then we’ll send you a code</Text>
+          <Text style={styles.subheading}>Name and email, then we’ll send you a code</Text>
 
-        <View style={styles.avatarSection}>
-          <AvatarPicker
-            initials={avatarInitials}
-            color={avatarColor}
-            uri={avatarLocalUri}
-            size="xl"
-            onPickedUri={async (uri) => setAvatarLocalUri(uri)}
-          />
-          <Text style={styles.avatarHint}>Avatar (optional)</Text>
-        </View>
+          <View style={styles.avatarSection}>
+            <AvatarPicker
+              initials={avatarInitials}
+              color={avatarColor}
+              uri={avatarLocalUri}
+              size="xl"
+              onPickedUri={async (uri) => setAvatarLocalUri(uri)}
+            />
+            <Text style={styles.avatarHint}>Avatar (optional)</Text>
+          </View>
 
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Full name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="John Doe"
-            placeholderTextColor={colors.slate400}
-            value={name}
-            onChangeText={setName}
-            textContentType="name"
-            autoCapitalize="words"
-          />
-        </View>
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Full name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="John Doe"
+              placeholderTextColor={colors.slate400}
+              value={name}
+              onChangeText={setName}
+              textContentType="name"
+              autoCapitalize="words"
+            />
+          </View>
 
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="you@example.com"
-            placeholderTextColor={colors.slate400}
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            textContentType="emailAddress"
-          />
-        </View>
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="you@example.com"
+              placeholderTextColor={colors.slate400}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              textContentType="emailAddress"
+            />
+          </View>
 
-        <Button onPress={handleSendCode} loading={loading} style={styles.submitBtn}>
-          Send code
-        </Button>
+          <Button onPress={handleSendCode} loading={loading} style={styles.submitBtn}>
+            Send code
+          </Button>
 
-        <TouchableOpacity onPress={() => router.back()} style={styles.switchLink}>
-          <Text style={styles.switchText}>
-            Already have an account?{' '}
-            <Text style={styles.switchHighlight}>Sign in</Text>
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <TouchableOpacity onPress={() => router.back()} style={styles.switchLink}>
+            <Text style={styles.switchText}>
+              Already have an account?{' '}
+              <Text style={styles.switchHighlight}>Sign in</Text>
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   )
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
     paddingTop: 56,
   },
 
-  logo: { fontSize: 36, fontFamily: 'Inter-ExtraBold', letterSpacing: -1, marginBottom: 32 },
+  logo: { fontSize: 36, fontFamily: 'Inter-ExtraBold', letterSpacing: -1, marginBottom: 16 },
 
   heading: {
     fontSize: 24, fontWeight: fontWeight.bold,
