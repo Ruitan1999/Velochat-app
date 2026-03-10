@@ -82,8 +82,7 @@ export default function ChatsScreen() {
     useCallback(() => {
       let isActive = true
       let timeoutId: ReturnType<typeof setTimeout> | null = null
-      let pollId: ReturnType<typeof setInterval> | null = null
-      const POLL_MS = 15000
+      
       const run = async () => {
         await Promise.all([refetchRidesSilentRef.current(), refetchRoomsSilentRef.current()])
         if (isActive && scrollRef.current) {
@@ -94,16 +93,12 @@ export default function ChatsScreen() {
           timeoutId = setTimeout(() => refetchAndNotifyTabUnread(user.id), 500)
         }
       }
+      
       run()
-      pollId = setInterval(() => {
-        refetchRidesSilentRef.current()
-        refetchRoomsSilentRef.current()
-        if (user?.id) refetchAndNotifyTabUnread(user.id)
-      }, POLL_MS)
+      
       return () => {
         isActive = false
         if (timeoutId != null) clearTimeout(timeoutId)
-        if (pollId != null) clearInterval(pollId)
       }
     }, [user?.id]),
   )

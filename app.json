@@ -31,6 +31,8 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "POST_NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED"
       ]
     },
@@ -68,7 +70,8 @@
       "androidMode": "default"
     },
     "updates": {
-      "enabled": false
+      "enabled": false,
+      "url": "https://u.expo.dev/315c31b3-57bd-4a52-a9f9-9b151a05f06a"
     },
     "extra": {
       "router": {},
@@ -77,6 +80,7 @@
       },
       "onesignalAppId": "da56aaa9-83c2-4ac3-8219-00a97740f710"
     },
-    "owner": "ruitan"
+    "owner": "ruitan",
+    "runtimeVersion": "1.0.0"
   }
 }

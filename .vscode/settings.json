@@ -3,6 +3,13 @@
   "java.import.gradle.enabled": false,
   "java.import.maven.enabled": false,
   "java.autobuild.enabled": false,
+  "java.jdt.ls.java.home": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home",
+  "java.project.resourceFilters": [
+    "node_modules",
+    ".git",
+    "android",
+    "ios"
+  ],
   "java.import.exclusions": [
     "**/node_modules/**",
     "**/android/**",
