@@ -68,7 +68,6 @@ export default function ChatScreen() {
   const [fullScreenImageUri, setFullScreenImageUri] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const hasInitialScrolledRef = useRef(false)
-  const isNearBottomRef = useRef(true)
   const lastMarkAsReadRef = useRef(0)
   const roomNotFoundAlertedRef = useRef(false)
 
