@@ -1,0 +1,8 @@
+{
+  "java.project.importOnFirstTimeStartup": "disabled",
+  "java.autobuild.enabled": false,
+  "files.exclude": {
+    "**/android/.gradle": true,
+    "**/android/app/build": true
+  }
+}
