@@ -22,6 +22,7 @@ type ChatRoomWithClub = ChatRoom & {
 }
 type ChatAvatarStackItem = { initials: string; color?: string; uri?: string | null }
 
+
 // On iOS, custom fonts (e.g. Inter) don't include emoji; use system font so emoji render.
 const iosEmojiFont = Platform.OS === 'ios' ? { fontFamily: 'System' as const } : {}
 
@@ -246,6 +247,8 @@ export default function ChatScreen() {
       }
     }, [loadRoom, refetchMessages, roomId, user]),
   )
+
+
 
   // When opened from an old notification, auth may not be ready yet; load room once user becomes available
   useEffect(() => {

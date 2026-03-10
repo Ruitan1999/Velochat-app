@@ -1,5 +1,7 @@
 {
   "java.project.importOnFirstTimeStartup": "disabled",
+  "java.import.gradle.enabled": false,
+  "java.import.maven.enabled": false,
   "java.autobuild.enabled": false,
   "java.import.exclusions": [
     "**/node_modules/**",
