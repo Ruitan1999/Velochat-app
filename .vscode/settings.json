@@ -3,6 +3,7 @@
         "supabase/functions"
     ],
     "deno.lint": true,
+    "deno.path": "/Users/Ruitan/.deno/bin/deno",
     "java.jdt.ls.java.home": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home",
     "gradle.javaDebug.java.home": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
 }
