@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react'
 import { Stack, router, useSegments, useRootNavigationState } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { View, ActivityIndicator } from 'react-native'
+import { View, ActivityIndicator, Text, TextInput } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useFonts } from 'expo-font'
@@ -18,6 +18,15 @@ import { setupNotificationListeners } from '../src/lib/notifications'
 import { colors } from '../src/lib/theme'
 
 const isExpoGo = Constants.appOwnership === 'expo'
+
+  // Disable iOS Dynamic Type scaling so font sizes match Android exactly.
+  // Without this, iOS respects the user's system font size (Accessibility settings)
+  // which can make text appear smaller or larger than the specified fontSize.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ; (Text as any).defaultProps = { ...((Text as any).defaultProps ?? {}), allowFontScaling: false }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ; (TextInput as any).defaultProps = { ...((TextInput as any).defaultProps ?? {}), allowFontScaling: false }
+
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -58,7 +67,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
 
     const unsubExpo = setupNotificationListeners(
-      () => {},
+      () => { },
       (response: any) => {
         const data = response?.notification?.request?.content?.data ?? {}
         navigateToRoom(data?.roomId ?? data?.room_id)
