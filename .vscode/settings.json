@@ -1,0 +1,8 @@
+{
+    "deno.enablePaths": [
+        "supabase/functions"
+    ],
+    "deno.lint": true,
+    "java.jdt.ls.java.home": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home",
+    "gradle.javaDebug.java.home": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
+}
