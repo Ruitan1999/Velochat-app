@@ -74,6 +74,12 @@ export function useRides() {
         const expired = rawRoom?.expiry && new Date(rawRoom.expiry).getTime() <= now
         const chatRoom = rawRoom && !expired ? rawRoom : null
         const unread = chatRoom ? (unreadByRoom.get(chatRoom.id) ?? 0) : 0
+        
+        // Stabilize RSVPs array to prevent Avatar element re-renders due to arbitrary PG sort order
+        if (r.rsvps) {
+          r.rsvps.sort((a: any, b: any) => a.user_id.localeCompare(b.user_id))
+        }
+
         return {
           ...r,
           chat_room: chatRoom ? { ...chatRoom, unread_count: unread } : null,
@@ -122,16 +128,6 @@ export function useRides() {
     // long backgrounds where OS closed the WebSocket connection.
     const channel = supabase
       .channel(`rides-updates-${user.id}-${appResumeKey}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'ride_rsvps',
-      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
@@ -188,10 +184,17 @@ export function useChatRooms() {
         ; (unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
           unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
         })
-      return myRooms.map((r: any) => ({
-        ...r,
-        unread_count: unreadByRoom.get(r.id) ?? 0,
-      }))
+      return myRooms.map((r: any) => {
+        // Stabilize participants array to prevent Avatar element re-renders
+        if (r.participants) {
+          r.participants.sort((a: any, b: any) => a.user_id.localeCompare(b.user_id))
+        }
+        
+        return {
+          ...r,
+          unread_count: unreadByRoom.get(r.id) ?? 0,
+        }
+      })
     }
     try {
       const result = await Promise.race([doFetch(), timeoutPromise])
@@ -235,16 +238,6 @@ export function useChatRooms() {
 
     const channel = supabase
       .channel(`chat-list-${user.id}-${appResumeKey}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'chat_rooms',
-      }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
