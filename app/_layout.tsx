@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { Stack, router, useSegments, useRootNavigationState } from 'expo-router'
+import { Stack, router, useSegments, useRootNavigationState, useLocalSearchParams } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { View, ActivityIndicator, Text, TextInput } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -30,19 +30,21 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   const segments = useSegments()
   const navState = useRootNavigationState()
+  const params = useLocalSearchParams<{ flow?: string }>()
 
   useEffect(() => {
     if (loading || !navState?.key) return
 
     const inAuthGroup = segments[0] === '(auth)'
-    const inAuthEmailOtp = inAuthGroup && segments.at(1) === 'otp'
+    const inAuthOtp = inAuthGroup && segments.at(1) === 'otp'
+    const isEmailChangeFlow = inAuthOtp && params.flow === 'email-change'
 
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login')
-    } else if (session && inAuthGroup && !inAuthEmailOtp) {
+    } else if (session && inAuthGroup && !isEmailChangeFlow) {
       router.replace('/(tabs)/chats')
     }
-  }, [session, loading, segments, navState?.key])
+  }, [session, loading, segments, navState?.key, params.flow])
 
   // Notification click → deep link to chat (OneSignal + Expo push). Skip in Expo Go (no native push).
   // Only navigate when auth is ready so the chat screen can load the room; validate roomId to avoid empty room.

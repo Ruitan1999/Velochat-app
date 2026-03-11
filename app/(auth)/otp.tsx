@@ -55,8 +55,8 @@ export default function OtpScreen() {
     }
   }
 
-  const handleVerify = useCallback(async (inputCode?: string) => {
-    const codeToVerify = (inputCode ?? code).replace(/\D/g, '').slice(0, CODE_LENGTH)
+  const handleVerify = useCallback(async (inputCode?: string | any) => {
+    const codeToVerify = (typeof inputCode === 'string' ? inputCode : code).replace(/\D/g, '').slice(0, CODE_LENGTH)
 
     if (loading) return
 
@@ -215,7 +215,7 @@ export default function OtpScreen() {
           />
           <Text style={styles.expiryHint}>Your verification code expires in 10 minutes.</Text>
 
-          <Button onPress={handleVerify} loading={loading} style={styles.submitBtn} disabled={code.length !== CODE_LENGTH}>
+          <Button onPress={() => handleVerify()} loading={loading} style={styles.submitBtn} disabled={code.length !== CODE_LENGTH}>
             Verify
           </Button>
 
