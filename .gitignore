@@ -13,3 +13,4 @@ dist
 # Google Play service account key (do not commit)
 google-play-service-account.json
 node_modules
+node_modules

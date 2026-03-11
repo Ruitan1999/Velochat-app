@@ -13,7 +13,7 @@ import { getSignupAvatarLocalUri, clearSignupDraft } from '../../src/lib/signupD
 import { uploadAvatarFromUri } from '../../src/lib/avatarUpload'
 import { supabase } from '../../src/lib/supabase'
 
-const CODE_LENGTH = 8
+const CODE_LENGTH = 6
 const RESEND_COOLDOWN_SEC = 60
 
 export default function OtpScreen() {
@@ -48,6 +48,11 @@ export default function OtpScreen() {
     const digits = value.replace(/\D/g, '').slice(0, CODE_LENGTH)
     setCode(digits)
     if (digits.length < CODE_LENGTH) attemptedCodeRef.current = null
+
+    // Automatically trigger verify if all digits are entered
+    if (digits.length === CODE_LENGTH && digits !== attemptedCodeRef.current) {
+      void handleVerify(digits)
+    }
   }
 
   const handleVerify = useCallback(async (inputCode?: string) => {
@@ -67,6 +72,7 @@ export default function OtpScreen() {
       const { error, userId } = await verifyOtp(email, codeToVerify)
       if (error) {
         attemptedCodeRef.current = null
+        setCode('') // <-- Added this to fix the infinite loop
         Alert.alert('Verification failed', error.message)
         return
       }
@@ -87,17 +93,15 @@ export default function OtpScreen() {
         return
       }
 
-      // Navigate first so Root Layout is fully in control, then do signup avatar in background.
-      const navDelayMs = 150
-      setTimeout(() => {
-        router.replace('/(tabs)/chats')
-      }, navDelayMs)
+      // AuthGate in _layout.tsx will automatically redirect to /(tabs)/chats once the session state updates.
+      // Do not manually router.replace() here, otherwise it conflicts with the layout useEffect when closing/reopening the app.
 
       if (flow === 'signup' && userId) {
         const localUri = getSignupAvatarLocalUri()
         clearSignupDraft()
+        
         if (localUri) {
-          // Run after navigation so we don't trigger "navigate before mount" from this stack.
+          // We use a small delay just to let the session store and AuthGate route us first.
           setTimeout(async () => {
             try {
               const avatarUrl = await uploadAvatarFromUri({ userId, localUri })
@@ -106,11 +110,12 @@ export default function OtpScreen() {
             } catch {
               // Optional — user can set avatar later in Profile.
             }
-          }, navDelayMs + 50)
+          }, 200)
         }
       }
     } catch (error) {
       attemptedCodeRef.current = null
+      setCode('') // <-- Added this here too just in case of unknown exceptions
       const message = error instanceof Error ? error.message : 'Something went wrong while verifying the code.'
       Alert.alert('Verification failed', message)
     } finally {
@@ -120,11 +125,13 @@ export default function OtpScreen() {
 
   // Slightly delay auto-verify so iOS paste/autofill can finish updating the native input first.
   useEffect(() => {
-    if (code.length !== CODE_LENGTH || code === attemptedCodeRef.current || loading) return
-    const t = setTimeout(() => {
-      void handleVerify(code)
-    }, 150)
-    return () => clearTimeout(t)
+    // Only auto-verify if exactly 6 digits, we aren't loading, and we haven't just tried this exact code.
+    if (code.length === CODE_LENGTH && !loading && code !== attemptedCodeRef.current) {
+      const t = setTimeout(() => {
+        void handleVerify(code)
+      }, 150)
+      return () => clearTimeout(t)
+    }
   }, [code, loading, handleVerify])
 
   const handleBackToLogin = () => {
@@ -176,14 +183,14 @@ export default function OtpScreen() {
             {flow === 'email-change'
               ? (
                 <>
-                  Enter the 8-digit code we sent to your current email{' '}
+                  Enter the 6-digit code we sent to your current email{' '}
                   <Text style={styles.email}>{email}</Text>
                   . After this, we&apos;ll update your login email.
                 </>
               )
               : (
                 <>
-                  We sent an 8-digit code to{' '}
+                  We sent a 6-digit code to{' '}
                   <Text style={styles.email}>{email}</Text>
                 </>
               )
@@ -193,7 +200,7 @@ export default function OtpScreen() {
           <TextInput
             ref={inputRef}
             style={styles.input}
-            placeholder="00000000"
+            placeholder="000000"
             placeholderTextColor={colors.slate400}
             value={code}
             onChangeText={handleChange}
@@ -236,10 +243,11 @@ const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   backBtn: {
     position: 'absolute',
-    top: 8,
+    top: Platform.OS === 'ios' ? 12 : 16,
     left: 16,
-    zIndex: 10,
-    padding: 4,
+    zIndex: 999,
+    padding: 8,
+    elevation: 5,
   },
   inner: {
     flex: 1,
@@ -268,8 +276,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: 16,
     fontSize: 28,
-    letterSpacing: 4,
-    textAlign: 'left',
+    letterSpacing: 14,
+    textAlign: 'center',
     color: colors.slate900,
     marginBottom: 8,
   },

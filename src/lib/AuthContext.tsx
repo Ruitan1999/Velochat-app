@@ -175,9 +175,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const APPLE_REVIEW_EMAIL = 'test@velochat.cc'
+  const APPLE_REVIEW_OTP = '123456'
+  const APPLE_REVIEW_PASSWORD = 'SuperSecretPassword123!'
+
   async function requestLoginOtp(email: string) {
+    const cleanEmail = email.trim().toLowerCase()
+    if (cleanEmail === APPLE_REVIEW_EMAIL) {
+      return { error: null }
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       options: { shouldCreateUser: false },
     })
     return { error: error ?? null }
@@ -197,9 +206,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function verifyOtp(email: string, token: string) {
+    const cleanEmail = email.trim().toLowerCase()
+    const cleanToken = token.trim()
+
+    // 1. Intercept OTP Verification for System Accounts
+    if (cleanEmail === APPLE_REVIEW_EMAIL) {
+      if (cleanToken === APPLE_REVIEW_OTP) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: APPLE_REVIEW_PASSWORD,
+        })
+        return { error, userId: data?.user?.id }
+      }
+      return { error: new Error('Invalid OTP'), userId: undefined }
+    }
+
+    // Normal user OTP verification flow
     const { data, error } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: token.trim(),
+      email: cleanEmail,
+      token: cleanToken,
       type: 'email',
     })
     if (error) return { error, userId: undefined }

@@ -215,10 +215,11 @@ const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   backBtn: {
     position: 'absolute',
-    top: 8,
+    top: Platform.OS === 'ios' ? 12 : 16,
     left: 16,
-    zIndex: 10,
-    padding: 4,
+    zIndex: 999,
+    padding: 8,
+    elevation: 5,
   },
   inner: {
     flexGrow: 1, paddingHorizontal: 28, paddingBottom: 40,
