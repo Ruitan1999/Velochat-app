@@ -15,6 +15,10 @@ type DataFetchOpts = { silent?: boolean; retryAfterTimeout?: boolean }
 
 export function useRides() {
   const { user, appResumeKey } = useAuth()
+  // Use the stable primitive user ID rather than the user object so the fetch
+  // callback doesn't get a new reference (and trigger a non-silent re-fetch)
+  // just because AuthContext called setUser() with a new object on app resume.
+  const userId = user?.id ?? null
   const [rides, setRides] = useState<Ride[]>([])
   const [loading, setLoading] = useState(true)
   const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => { })
@@ -22,7 +26,7 @@ export function useRides() {
   const fetchInFlightRef = useRef(false)
 
   const fetch = useCallback(async (opts?: DataFetchOpts) => {
-    if (!user) {
+    if (!userId) {
       setLoading(false)
       return
     }
@@ -34,7 +38,7 @@ export function useRides() {
       const { data: memberships } = await supabase
         .from('club_members')
         .select('club_id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
       const clubIds = (memberships ?? []).map((m: { club_id: string }) => m.club_id)
       const ridesQuery = supabase
         .from('rides')
@@ -45,14 +49,14 @@ export function useRides() {
           chat_rooms(*)
         `)
       const { data, error } = clubIds.length > 0
-        ? await ridesQuery.or(`organizer_id.eq.${user.id},club_id.in.(${clubIds.join(',')})`).order('created_at', { ascending: false })
-        : await ridesQuery.eq('organizer_id', user.id).order('created_at', { ascending: false })
+        ? await ridesQuery.or(`organizer_id.eq.${userId},club_id.in.(${clubIds.join(',')})`).order('created_at', { ascending: false })
+        : await ridesQuery.eq('organizer_id', userId).order('created_at', { ascending: false })
       if (error) console.warn('Failed to load rides:', error.message)
       const now = Date.now()
       const filtered = (data ?? []).filter((r: any) => {
         const inClub = r.club_id && clubIds.includes(r.club_id)
-        const isOrganizer = r.organizer_id === user.id
-        const invitedByRsvp = (r.rsvps ?? []).some((rv: any) => rv.user_id === user.id)
+        const isOrganizer = r.organizer_id === userId
+        const invitedByRsvp = (r.rsvps ?? []).some((rv: any) => rv.user_id === userId)
         if (!(isOrganizer || inClub || invitedByRsvp)) return false
         if (r.chat_expiry != null && new Date(r.chat_expiry).getTime() <= now) return false
         try {
@@ -64,7 +68,7 @@ export function useRides() {
           return true
         }
       })
-      const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
+      const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: userId })
       const unreadByRoom = new Map<string, number>()
         ; (unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
           unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
@@ -74,7 +78,7 @@ export function useRides() {
         const expired = rawRoom?.expiry && new Date(rawRoom.expiry).getTime() <= now
         const chatRoom = rawRoom && !expired ? rawRoom : null
         const unread = chatRoom ? (unreadByRoom.get(chatRoom.id) ?? 0) : 0
-        
+
         // Stabilize RSVPs array to prevent Avatar element re-renders due to arbitrary PG sort order
         if (r.rsvps) {
           r.rsvps.sort((a: any, b: any) => a.user_id.localeCompare(b.user_id))
@@ -105,39 +109,39 @@ export function useRides() {
       fetchInFlightRef.current = false
       setLoading(false)
     }
-  }, [user])
+  }, [userId])
 
   fetchRef.current = fetch
   useEffect(() => { fetch() }, [fetch])
 
   // Refetch when app returns from background and session has been refreshed (appResumeKey increments after getSession).
   useEffect(() => {
-    if (appResumeKey === 0 || !user) return
+    if (appResumeKey === 0 || !userId) return
     isResumingRef.current = true
     fetchRef.current?.({ silent: true })
     const t = setTimeout(() => {
       isResumingRef.current = false
     }, 3000)
     return () => clearTimeout(t)
-  }, [appResumeKey, user])
+  }, [appResumeKey, userId])
 
   useEffect(() => {
-    if (!user) return
+    if (!userId) return
 
     // Re-subscribe on every app resume (appResumeKey) so channels reconnect after
     // long backgrounds where OS closed the WebSocket connection.
     const channel = supabase
-      .channel(`rides-updates-${user.id}-${appResumeKey}`)
+      .channel(`rides-updates-${userId}-${appResumeKey}`)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'chat_participants',
-        filter: `user_id=eq.${user.id}`,
+        filter: `user_id=eq.${userId}`,
       }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user, appResumeKey])
+  }, [userId, appResumeKey])
 
   const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])
   return { rides, loading, refetch: fetch, refetchSilent, setRides }
@@ -147,6 +151,10 @@ export function useRides() {
 
 export function useChatRooms() {
   const { user, appResumeKey } = useAuth()
+  // Use the stable primitive user ID rather than the user object so the fetch
+  // callback doesn't get a new reference (and trigger a non-silent re-fetch)
+  // just because AuthContext called setUser() with a new object on app resume.
+  const userId = user?.id ?? null
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [loading, setLoading] = useState(true)
   const fetchRef = useRef<(opts?: DataFetchOpts) => void>(() => { })
@@ -154,7 +162,7 @@ export function useChatRooms() {
   const fetchInFlightRef = useRef(false)
 
   const fetch = useCallback(async (opts?: DataFetchOpts) => {
-    if (!user) {
+    if (!userId) {
       setLoading(false)
       return
     }
@@ -177,9 +185,9 @@ export function useChatRooms() {
         .gt('expiry', nowIso)
         .order('created_at', { ascending: false })
       const myRooms = (data ?? []).filter((r: ChatRoom & { participants: { user_id: string }[] }) =>
-        r.participants?.some((p: { user_id: string }) => p.user_id === user.id)
+        r.participants?.some((p: { user_id: string }) => p.user_id === userId)
       )
-      const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: user.id })
+      const { data: unreadData } = await supabase.rpc('get_unread_counts', { p_user_id: userId })
       const unreadByRoom = new Map<string, number>()
         ; (unreadData ?? []).forEach((row: { room_id: string; unread_count: number }) => {
           unreadByRoom.set(row.room_id, Number(row.unread_count) || 0)
@@ -189,7 +197,7 @@ export function useChatRooms() {
         if (r.participants) {
           r.participants.sort((a: any, b: any) => a.user_id.localeCompare(b.user_id))
         }
-        
+
         return {
           ...r,
           unread_count: unreadByRoom.get(r.id) ?? 0,
@@ -214,40 +222,40 @@ export function useChatRooms() {
       fetchInFlightRef.current = false
       setLoading(false)
     }
-  }, [user])
+  }, [userId])
 
   fetchRef.current = fetch
   useEffect(() => { fetch() }, [fetch])
 
   // Refetch when app returns from background and session has been refreshed (appResumeKey increments after getSession).
   useEffect(() => {
-    if (appResumeKey === 0 || !user) return
+    if (appResumeKey === 0 || !userId) return
     isResumingRef.current = true
     fetchRef.current?.({ silent: true })
     const t = setTimeout(() => {
       isResumingRef.current = false
     }, 3000)
     return () => clearTimeout(t)
-  }, [appResumeKey, user])
+  }, [appResumeKey, userId])
 
   // Realtime: new messages, new rooms, or added as participant → refetch list
   // Use ref so callback always runs latest fetch (avoids stale closure, e.g. on iOS)
   // Re-subscribe on every app resume (appResumeKey) so channels reconnect after long backgrounds.
   useEffect(() => {
-    if (!user) return
+    if (!userId) return
 
     const channel = supabase
-      .channel(`chat-list-${user.id}-${appResumeKey}`)
+      .channel(`chat-list-${userId}-${appResumeKey}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'chat_participants',
-        filter: `user_id=eq.${user.id}`,
+        filter: `user_id=eq.${userId}`,
       }, () => { if (!isResumingRef.current) fetchRef.current?.() })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user, appResumeKey])
+  }, [userId, appResumeKey])
 
   const refetchSilent = useCallback(() => fetch({ silent: true }), [fetch])
   return { rooms, loading, refetch: fetch, refetchSilent, setRooms }
