@@ -2,7 +2,7 @@
   "expo": {
     "name": "VeloChat",
     "slug": "velochat",
-    "version": "1.0.4",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -70,8 +70,7 @@
       "androidMode": "default"
     },
     "updates": {
-      "enabled": false,
-      "url": "https://u.expo.dev/315c31b3-57bd-4a52-a9f9-9b151a05f06a"
+      "enabled": false
     },
     "extra": {
       "router": {},

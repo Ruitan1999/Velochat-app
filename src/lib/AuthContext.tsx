@@ -127,12 +127,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
               const { data } = await supabase.auth.getSession()
               if (!mountedRef.current) return
-              if (data.session?.user) {
+              const nowSecs = Math.floor(Date.now() / 1000)
+              const tokenExpired = data.session?.expires_at != null && data.session.expires_at <= nowSecs
+              if (tokenExpired) {
+                // Token expired while sleeping — refresh explicitly before bumping appResumeKey
+                // so data hooks don't fire with a stale token and fail with 401s.
+                try {
+                  const { data: refreshed } = await Promise.race([
+                    supabase.auth.refreshSession(),
+                    new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000)),
+                  ])
+                  if (refreshed?.session?.user && mountedRef.current) {
+                    setSession(refreshed.session)
+                    setUser(refreshed.session.user)
+                    setOneSignalUserId(refreshed.session.user.id)
+                  }
+                } catch (refreshErr) {
+                  const isInvalidToken = refreshErr instanceof Error &&
+                    /refresh token/i.test(refreshErr.message)
+                  if (isInvalidToken && mountedRef.current) {
+                    // Refresh token is gone/revoked — session is unrecoverable, force sign out
+                    await supabase.auth.signOut()
+                  } else {
+                    // Timed out or other transient error — use cached session; startAutoRefresh will retry
+                    if (data.session?.user && mountedRef.current) {
+                      setSession(data.session)
+                      setUser(data.session.user)
+                      setOneSignalUserId(data.session.user.id)
+                    }
+                  }
+                }
+              } else if (data.session?.user) {
                 setSession(data.session)
                 setUser(data.session.user)
                 setOneSignalUserId(data.session.user.id)
               }
-
             } catch {
               // getSession from cache shouldn't fail, but if it does just continue
             }
