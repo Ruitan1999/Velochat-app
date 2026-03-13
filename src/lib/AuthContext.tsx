@@ -189,16 +189,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function fetchProfile(userId: string) {
     try {
-      const { data } = await supabase
+      const fetchPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
+      const timeoutPromise = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error('timeout')), 8000)
+      )
+      const { data } = await Promise.race([fetchPromise, timeoutPromise])
       if (data) {
         setProfile(data)
       }
     } catch {
-      // Profile fetch failed — continue without profile
+      // Profile fetch failed or timed out — continue without profile
     } finally {
       setLoading(false)
     }
